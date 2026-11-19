@@ -1,21 +1,34 @@
 ## Validation: catches a wrong model definition before anything is changed
 
-check "model_definitions" {
-  assert {
-    condition     = alltrue([for n, m in local.models : m.name == n])
-    error_message = "model.yaml 'name' must equal its folder name (the gateway model name)."
-  }
-  assert {
-    condition     = alltrue([for n, m in local.models : can(regex("^[a-z0-9][a-z0-9.-]{0,62}$", n))])
-    error_message = "Gateway model names: lowercase letters, digits, dots and hyphens, at most 63 characters."
-  }
-  assert {
-    condition     = alltrue([for n, m in local.models : contains(local.accounts[m.account].formats, m.model.format)])
-    error_message = "A model's format must be one of its hosting account's formats (account.yaml)."
-  }
-  assert {
-    condition     = alltrue([for n, m in local.models : contains(["openai"], m.api) && contains(["active", "deprecated"], m.status)])
-    error_message = "api must be 'openai'; status must be 'active' or 'deprecated'."
+# Preconditions, not a check block: a check block only warns, so a wrong definition would still be applied.
+resource "terraform_data" "model_definitions" {
+  lifecycle {
+    precondition {
+      condition     = alltrue([for n, m in local.models : m.name == n])
+      error_message = "model.yaml 'name' must equal its folder name (the gateway model name)."
+    }
+    precondition {
+      condition     = alltrue([for n, m in local.models : can(regex("^[a-z0-9][a-z0-9.-]{0,62}$", n))])
+      error_message = "Gateway model names: lowercase letters, digits, dots and hyphens, at most 63 characters."
+    }
+    precondition {
+      condition     = alltrue([for n, m in local.models : contains(local.accounts[m.account].formats, m.model.format)])
+      error_message = "A model's format must be one of its hosting account's formats (account.yaml)."
+    }
+    precondition {
+      condition     = alltrue([for n, m in local.models : contains(["openai"], m.api) && contains(["active", "deprecated"], m.status)])
+      error_message = "api must be 'openai'; status must be 'active' or 'deprecated'."
+    }
+    # Pinned versions: Azure must never swap the version that was evaluated and approved. A new version is
+    # onboarded as its own model folder and evaluated before any project uses it.
+    precondition {
+      condition     = alltrue([for n, m in local.models : try(m.deployment.version_upgrade, "") == "NoAutoUpgrade"])
+      error_message = "deployment.version_upgrade must be NoAutoUpgrade: model versions are pinned and changed only through onboarding."
+    }
+    precondition {
+      condition     = alltrue([for n, m in local.models : can(regex("^[0-9A-Za-z.-]+$", tostring(m.model.version)))])
+      error_message = "model.version must be an explicit version (for example \"2025-08-07\"), not empty."
+    }
   }
 }
 

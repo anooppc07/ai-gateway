@@ -1,0 +1,23 @@
+# Platform model A: the model projects use today (test bed). The folder name is the gateway model name: projects
+# list it in project.yaml and agents use "<connection>/gpt-5-mini".
+name: gpt-5-mini
+api: openai
+status: active
+owner: ai-platform-team
+
+model:
+  format: OpenAI
+  name: gpt-5-mini
+  version: "2025-08-07"
+
+deployment:
+  name: gpt-5-mini
+  sku: GlobalStandard
+  capacity: 50                             # thousands of tokens per minute (50 = 50,000 TPM)
+  version_upgrade: NoAutoUpgrade           # pinned: a new version is onboarded and evaluated, never swapped in
+  existing: false
+
+guardrail: Microsoft.DefaultV2
+
+docs_file: docs.md
+tests_file: tests.yaml
