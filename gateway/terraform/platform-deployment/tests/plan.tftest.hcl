@@ -27,25 +27,29 @@ mock_provider "azurerm" {
 run "registers_each_model" {
   command = plan
 
-  # gpt-5.4-mini is adopted with an import block; mock providers can't import, so the result is overridden.
+  # Deployments can be adopted with an import block; mock providers can't import, so the result is overridden.
   override_resource {
     target = azurerm_cognitive_deployment.model
   }
 
   assert {
-    condition     = contains(keys(azurerm_cognitive_deployment.model), "gpt-5.4-mini")
-    error_message = "gpt-5.4-mini should be deployed."
+    condition     = contains(keys(azurerm_cognitive_deployment.model), "gpt-5-mini")
+    error_message = "gpt-5-mini should be deployed."
   }
   assert {
-    condition     = azurerm_api_management_backend.model["gpt-5.4-mini"].url == "https://acct.cognitiveservices.azure.com/openai"
+    condition     = azurerm_api_management_backend.model["gpt-5-mini"].url == "https://acct.cognitiveservices.azure.com/openai"
     error_message = "Backend should point at the hosting account's /openai endpoint."
   }
   assert {
-    condition     = jsondecode(azurerm_api_management_named_value.registry["gpt-5.4-mini"].value).capacity_tpm == 200000
+    condition     = jsondecode(azurerm_api_management_named_value.registry["gpt-5-mini"].value).capacity_tpm == 50000
     error_message = "Registry capacity should be deployment capacity x 1000 TPM."
   }
   assert {
-    condition     = azurerm_api_management_named_value.kill_switch["gpt-5.4-mini"].value == "active"
+    condition     = azurerm_api_management_named_value.kill_switch["gpt-5-mini"].value == "active"
     error_message = "Kill switch starts active."
+  }
+  assert {
+    condition     = azurerm_cognitive_deployment.model["gpt-5-mini"].version_upgrade_option == "NoAutoUpgrade"
+    error_message = "Model versions are pinned (NoAutoUpgrade)."
   }
 }
