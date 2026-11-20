@@ -1,7 +1,7 @@
 # Model-hosting Foundry account of the test bed sandbox (gateway/sandbox), used as the dev stage: models only, no
-# agent projects (those are in aif-sbx-agents-anyse). The folder name is the Azure resource name.
+# agent projects (those are in aif-sbx-agents-8xz29). The folder name is the Azure resource name.
 environment: dev
-subscription_id: 79fb3b3f-0bc7-4bd5-92f9-50083ca69d3d
+subscription_id: 3471ad5a-d8a8-4a80-b30b-668798733c14
 resource_group: rg-ai-gateway-sandbox
 region: eastus2
 formats: [OpenAI]
