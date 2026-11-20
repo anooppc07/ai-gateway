@@ -123,6 +123,13 @@ resource "azurerm_api_management_product" "models" {
   approval_required     = true
   subscriptions_limit   = 100 # required with approval_required
   published             = true
+
+  lifecycle {
+    precondition {
+      condition     = length(local.catalog) <= 1000
+      error_message = "The model catalog (product description) is ${length(local.catalog)} characters; APIM allows at most 1,000. Shorten the catalog rows in locals.tf."
+    }
+  }
 }
 
 # Signed-in developers see the product (and its catalog) in the Developer Portal.
