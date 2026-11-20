@@ -1,0 +1,23 @@
+# Platform model B: the new model of the test bed. Deployed and registered on the gateway, but no project can use it
+# until it's evaluated against model A (gpt-5-mini), approved, and the project adds it after its own evaluation.
+name: gpt-5.4-mini
+api: openai
+status: active
+owner: ai-platform-team
+
+model:
+  format: OpenAI
+  name: gpt-5.4-mini
+  version: "2026-03-17"
+
+deployment:
+  name: gpt-5.4-mini
+  sku: GlobalStandard
+  capacity: 20                             # 20,000 TPM: the subscription's gpt-5.4-mini quota is shared (950 of 1,000 used)
+  version_upgrade: NoAutoUpgrade
+  existing: false
+
+guardrail: Microsoft.DefaultV2
+
+docs_file: docs.md
+tests_file: tests.yaml

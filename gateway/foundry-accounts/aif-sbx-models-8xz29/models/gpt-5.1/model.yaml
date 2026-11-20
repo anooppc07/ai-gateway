@@ -1,0 +1,23 @@
+# Platform judge model of the test bed: scores evaluations (platform G4, project P5). It is a setting, not code:
+# GitHub variable EVAL_JUDGE_MODEL names it; an evaluation pack may override it with judge_model.
+name: gpt-5.1
+api: openai
+status: active
+owner: ai-platform-team
+
+model:
+  format: OpenAI
+  name: gpt-5.1
+  version: "2025-11-13"
+
+deployment:
+  name: gpt-5.1
+  sku: GlobalStandard
+  capacity: 50
+  version_upgrade: NoAutoUpgrade
+  existing: false
+
+guardrail: Microsoft.DefaultV2
+
+docs_file: docs.md
+tests_file: tests.yaml
