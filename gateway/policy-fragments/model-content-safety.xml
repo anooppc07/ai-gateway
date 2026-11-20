@@ -9,6 +9,9 @@
        model's models.allowed[].content_safety, else the project's models.content_safety. A setting neither passes
        uses the platform default here: severity 4 for each category, Prompt Shields on. Settings can only be stricter
        (validated by agent-ci and the model-project-connection plan).
+       One platform exception: a judge model (model.yaml purpose: judge, in the registry) gets cs-prompt-shields false
+       from onboarding. A judge prompt is the evaluator's instructions around a model's answer, written by the platform;
+       Prompt Shields reads it as an injection attempt and blocked some judge calls (403). Harm categories still apply.
        The check scores what the USER sent: the latest user message. The rest of the request (Foundry's developer
        message "You are an AI assistant accessed via an API...", the agent's instructions, history, tool results) is
        written by the platform and the agent; llm-content-safety scores all text it gets as one, and with that framing

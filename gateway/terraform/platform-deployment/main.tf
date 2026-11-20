@@ -19,6 +19,10 @@ resource "terraform_data" "model_definitions" {
       condition     = alltrue([for n, m in local.models : contains(["openai"], m.api) && contains(["active", "deprecated"], m.status)])
       error_message = "api must be 'openai'; status must be 'active' or 'deprecated'."
     }
+    precondition {
+      condition     = alltrue([for n, m in local.models : contains(["serving", "judge"], try(m.purpose, "serving"))])
+      error_message = "purpose must be 'serving' (default) or 'judge' (scores evaluations only)."
+    }
     # Pinned versions: Azure must never swap the version that was evaluated and approved. A new version is
     # onboarded as its own model folder and evaluated before any project uses it.
     precondition {
