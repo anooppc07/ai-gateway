@@ -13,7 +13,7 @@ model:
 deployment:
   name: gpt-5.1
   sku: GlobalStandard
-  capacity: 50
+  capacity: 150                            # an evaluation run used ~97k judge tokens in 1-2 minutes; 50k throttled it
   version_upgrade: NoAutoUpgrade
   existing: false
 
