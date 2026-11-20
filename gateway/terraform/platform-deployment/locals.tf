@@ -53,14 +53,14 @@ locals {
     }
   }
 
-  # Developer Portal: catalog of every model on the product page (markdown).
+  # Developer Portal: catalog of every model on the product page (markdown). APIM limits a product description to
+  # 1,000 characters, so the catalog has one short row per model; each model's full card is in its project model API
+  # docs (the registry summary) and in docs.md.
   catalog = join("\n", concat([
-    "Models served by the AI gateway. A project reaches them through its own model API (`models/<project>`); its agents use `<connection>/<model>`, where `<connection>` is the project's own connection name (`models.connection` in its `project.yaml`).",
+    "Models served by the AI gateway. Agents use `<connection>/<model>`. To request one, add it to `models.allowed` in your `project.yaml`.",
     "",
-    "**Request a model:** add it to `models.allowed` in your project's `project.yaml`, with tokens per minute and per day; the platform team approves the pull request.",
-    "",
-    "| Model | Status | Region | Content safety | Capacity (TPM) | Use in an agent |",
-    "|---|---|---|---|---|---|",
-    ], [for n, r in local.registry : "| **${n}**: ${r.summary} | ${r.status} | ${r.region} | ${r.guardrail} | ${r.capacity_tpm} | `<connection>/${n}` |"]
+    "| Model | Status | Region | TPM |",
+    "|---|---|---|---|",
+    ], [for n, r in local.registry : "| `${n}` | ${r.status} | ${r.region} | ${r.capacity_tpm} |"]
   ))
 }
