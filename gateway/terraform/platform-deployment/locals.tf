@@ -38,6 +38,7 @@ locals {
       name         = name
       api          = m.api
       status       = m.status
+      purpose      = try(m.purpose, "serving") # judge: scores evaluations; onboarding turns Prompt Shields off for it
       format       = m.model.format
       model        = m.model.name
       version      = m.model.version

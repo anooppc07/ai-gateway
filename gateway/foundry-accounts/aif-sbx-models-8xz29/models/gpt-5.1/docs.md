@@ -8,4 +8,4 @@ Judge model for evaluations on the platform. Not for agents: it scores other mod
 | Used by | Platform evaluation (B against A) and project evaluations, through the setting `EVAL_JUDGE_MODEL` |
 | API | Chat Completions |
 | Version | 2025-11-13, pinned (no automatic upgrade) |
-| Content safety | Microsoft default guardrail on the deployment |
+| Content safety | Microsoft default guardrail on the deployment; at the gateway, harm categories apply and Prompt Shields is off (`purpose: judge`) |

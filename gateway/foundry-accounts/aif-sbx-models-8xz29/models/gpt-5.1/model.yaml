@@ -3,6 +3,7 @@
 name: gpt-5.1
 api: openai
 status: active
+purpose: judge                             # scores evaluations only: Prompt Shields off for it (registry), harm categories on
 owner: ai-platform-team
 
 model:
