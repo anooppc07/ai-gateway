@@ -45,6 +45,10 @@ run "registers_each_model" {
     error_message = "Registry capacity should be deployment capacity x 1000 TPM."
   }
   assert {
+    condition     = jsondecode(azurerm_api_management_named_value.registry["gpt-5-mini"].value).lifecycle == "validated"
+    error_message = "Registry should show the lifecycle state from governance.yaml."
+  }
+  assert {
     condition     = azurerm_api_management_named_value.kill_switch["gpt-5-mini"].value == "active"
     error_message = "Kill switch starts active."
   }

@@ -98,6 +98,7 @@ as **variables** (not secrets); the jobs pass them to Terraform (`TF_VAR_*`) and
 | `APP_INSIGHTS_NAME`, `APP_INSIGHTS_RESOURCE_GROUP` | gateway telemetry and token metrics (optional) | `aiazrgtstmodelnpr013471ad` |
 | `PORTAL_ANONYMOUS` | products visible in the portal without sign-in | `false` |
 | `TF_STATE_RESOURCE_GROUP`, `TF_STATE_STORAGE_ACCOUNT`, `TF_STATE_CONTAINER` | Terraform state | `stscbxtf3471ad5a` / `tfstate` |
+| `RECORDS_STORAGE_ACCOUNT`, `RECORDS_CONTAINER` | decision records, immutable (required for a deployment; container default `records`) | the state account / `records` |
 
 Repository variable `PLATFORM_ENVIRONMENTS`: the stages the platform deploys to (`dev`). Hosting accounts are the
 folders under `gateway/foundry-accounts/` (`account.yaml`). The project repository keeps its own GitHub environments
@@ -155,6 +156,36 @@ Branch protection on `main` (Settings > Branches) makes this binding:
 **Test bed.** One account stands in for both teams, so one approval covers both roles: it shows the mechanism, not
 two real teams. In the bank, CODEOWNERS names teams (`@<org>/model-risk`, `@<org>/ai-platform`), and the check needs a
 token that can read team membership.
+
+## Lifecycle state and decision records
+
+**Lifecycle state.** Each model's `governance.yaml` holds `lifecycle.state`: `onboarded` → `evaluated` → `validated`
+→ `retired`. A new model starts as `onboarded`. The state changes only by a merged, reviewed pull request; a pipeline
+can propose the next state, with its evidence, but never sets it. Terraform copies the state into the registry entry
+(`model-meta-<model>`, field `lifecycle`), so APIM shows it. Terraform is the only writer of the registry; nobody
+edits it in the portal. Suspension at runtime is the kill switch, not a lifecycle state.
+
+**Decision records.** After `terraform apply` and the smoke test succeed on `main` (or on a release tag),
+`scripts/record.py` writes **one record per changed model** to an **immutable** storage container. Each record is JSON
+and holds:
+- the event: `onboarded`, `lifecycle <old> -> <new>`, `changed`, `removed`, or `deployed` (tag or manual run);
+- the model, its version, lifecycle state and governance record;
+- the merged pull request: title, author, approved commit, approvers on that commit, who merged it and when, and a
+  hash of its description;
+- the run that applied it;
+- a SHA-256 of every file of the model folder.
+
+A record is written only after the change is in effect, so a failed apply leaves no record. A deployment can't run
+without the record store (the job stops before apply when `RECORDS_STORAGE_ACCOUNT` isn't set). The upload is keyless:
+the pipeline's OIDC identity, Storage Blob Data Contributor on the container.
+
+Blob names: `<env>/models/<model>/<UTC time>-<commit>.json`. The container has a **time-based immutability policy**
+(WORM): a blob can't be changed or deleted until its retention ends. In the test bed the policy stays **unlocked** (an
+account admin can still shorten or remove it). In the bank it must be **locked**, with the retention the records
+policy requires; locking can't be undone.
+
+The merged pull requests are the Git-side history. Records aren't kept in Git: the pipeline can't push to a protected
+`main`, and repository admins can rewrite Git history.
 
 ## Two repositories
 
@@ -308,7 +339,7 @@ See [Shared policy](#shared-policy-policy-fragments), [Kill switches](#kill-swit
 | `gateway/scripts/` | model smoke test, Developer Portal publishing |
 | `.github/workflows/` | `gateway-policy-deployment.yml`, `model-platform-deployment.yml`, `ci.yml`, and the units `_policies`, `_models` |
 | `.github/actions/` | shared steps: `setup` (Python, Terraform, Azure sign-in), `tf-init` (state backend) |
-| `scripts/intake.py`, `scripts/approval_check.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check |
+| `scripts/intake.py`, `scripts/approval_check.py`, `scripts/record.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check; decision records |
 | `.github/CODEOWNERS` | who must approve which files |
 | `scripts/release_plan.py` | which stages run and whether each pipeline has a change (their `plan` job) |
 | `scripts/set_github_environment.sh`, `gateway/scripts/platform_env.py` | setting an environment's GitHub variables; reading them |

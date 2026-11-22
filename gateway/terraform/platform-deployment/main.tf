@@ -34,6 +34,11 @@ resource "terraform_data" "model_definitions" {
       )])
       error_message = "governance.yaml is required next to model.yaml, with tier (1-4; tier 0 is prohibited), tier_record and aiia (from the intake request)."
     }
+    # Lifecycle state, in governance.yaml: each change is a merged, reviewed pull request; the registry shows it.
+    precondition {
+      condition     = alltrue([for n, m in local.models : contains(["onboarded", "evaluated", "validated", "retired"], try(m.governance.lifecycle.state, ""))])
+      error_message = "governance.yaml lifecycle.state is required: onboarded, evaluated, validated or retired."
+    }
     precondition {
       condition     = alltrue([for n, m in local.models : !m.governance_inline])
       error_message = "Governance fields belong in governance.yaml (owned by model risk), not in model.yaml."

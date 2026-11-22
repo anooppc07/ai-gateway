@@ -129,6 +129,7 @@ def render(fields, issue, out_dir, requester):
         "sponsor": fields["sponsor"],
         "intake_issue": int(issue),
         "requested_by": requester,
+        "lifecycle": {"state": "onboarded"},   # onboarded -> evaluated -> validated -> retired, each by a merged PR
     }
     with open(os.path.join(folder, "governance.yaml"), "w", encoding="utf-8") as fh:
         fh.write(f"# Governance record of {name}, from intake request #{issue}. Owned by model risk (CODEOWNERS): changed\n"
