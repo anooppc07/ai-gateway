@@ -15,6 +15,10 @@ permissions:
   id-token: write
   contents: read
 
+defaults:
+  run:
+    shell: bash   # -eo pipefail: "terraform plan | tee" fails the step when the plan fails
+
 jobs:
   policies:
     name: ${{ inputs.plan_only && 'plan' || 'deploy' }} gateway policy (${{ inputs.environment }})
