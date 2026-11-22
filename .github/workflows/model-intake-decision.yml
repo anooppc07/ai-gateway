@@ -3,7 +3,8 @@
 #
 #   review: changes requested   comment on the request with what to change; label intake:changes-requested
 #   review: approved            comment on the request (who approved; other approvals may still be needed)
-#   closed without merging      rejected: label intake:rejected, the reviewer's reason, the request is closed
+#   closed without merging      by the requester: withdrawn (label intake:withdrawn); by anyone else: rejected (label
+#                               intake:rejected). The closer's reason is posted, and the request is closed
 #   merged                      the approval record on the request: approvers on the merged commit, who merged it, the
 #                               commit; label onboarding:approved
 name: model-intake-decision
@@ -66,8 +67,15 @@ jobs:
           unlabel onboarding:in-review intake:changes-requested
           if [ "$MERGED" != "true" ]; then
             reason=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate --jq "[.[] | select(.user.login == \"$ACTOR\")] | last | .body // empty" | tail -1)
-            label intake:rejected b60205 "Rejected by the approvers"
-            printf '### Intake: rejected\n\nRejected by @%s when closing %s.\n\n**Reason:** %s\n' "$ACTOR" "$PR_URL" "${reason:-_(no reason given on the pull request)_}" > c.md
+            requester=$(gh api "repos/$GH_REPO/issues/$issue" --jq .user.login)
+            if [ "$ACTOR" = "$requester" ]; then
+              # The requester closing their own request withdraws it; only someone else can reject it.
+              label intake:withdrawn ededed "Withdrawn by the requester"
+              printf '### Intake: withdrawn\n\nWithdrawn by the requester @%s when closing %s.\n\n**Reason:** %s\n' "$ACTOR" "$PR_URL" "${reason:-_(no reason given on the pull request)_}" > c.md
+            else
+              label intake:rejected b60205 "Rejected by the approvers"
+              printf '### Intake: rejected\n\nRejected by @%s when closing %s.\n\n**Reason:** %s\n' "$ACTOR" "$PR_URL" "${reason:-_(no reason given on the pull request)_}" > c.md
+            fi
             gh issue comment "$issue" --body-file c.md
             gh issue close "$issue" --reason "not planned"
             exit 0
