@@ -1,0 +1,3 @@
+# Smoke tests run after deployment.
+- embed: hello world
+  expect_dimensions_min: 256
