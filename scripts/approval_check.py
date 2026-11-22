@@ -12,7 +12,7 @@ code owners who is neither
 Approvals given on an older commit don't count: a change after approval needs approval again.
 
   approval_check.py      reads GITHUB_REPOSITORY, PR_NUMBER, GH_TOKEN; writes a table to GITHUB_STEP_SUMMARY;
-                         exits 1 when an owner's approval is missing
+                         exits 1 when an owner's approval is missing, 2 when the check couldn't run
 
 Teams in CODEOWNERS (@org/team) need a token that can read team membership; the workflow token can't, so the check
 fails and says so rather than passing. The test bed's CODEOWNERS names users.
@@ -152,4 +152,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:   # an API or parsing error: exit 2, reported as "error", not as "waiting for approval"
+        import traceback
+        traceback.print_exc()
+        sys.exit(2)

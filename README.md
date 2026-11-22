@@ -149,7 +149,7 @@ Branch protection on `main` (Settings > Branches) makes this binding:
 - Require a pull request, with 1 approval.
 - Require review from Code Owners.
 - Dismiss stale approvals when new commits are pushed.
-- Required status check `separation-of-duties`.
+- Required status check `separation-of-duties` (a commit status the check posts; the latest result wins).
 - Do not allow bypassing.
 
 **Test bed.** One account stands in for both teams, so one approval covers both roles: it shows the mechanism, not

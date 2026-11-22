@@ -7,6 +7,10 @@
 #
 # The check and CODEOWNERS are read from the base branch, not from the pull request, so a change can't loosen the
 # rule that approves it.
+#
+# The result is a commit status (context separation-of-duties) on the pull request's head commit, not the job's own
+# result: the check runs on several events (opened, each review), and GitHub would keep a failed run from before the
+# approval next to the passing one and block the merge. A commit status has one value per commit: the latest wins.
 name: separation-of-duties
 
 on:
@@ -19,6 +23,7 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
+  statuses: write   # the result, as the commit status separation-of-duties
 
 concurrency:
   group: separation-of-duties-${{ github.event.pull_request.number }}
@@ -29,7 +34,7 @@ defaults:
     shell: bash   # -eo pipefail
 
 jobs:
-  separation-of-duties:
+  approval-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,4 +44,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/approval_check.py
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          rc=0; python3 scripts/approval_check.py > result.md || rc=$?
+          cat result.md
+          if [ "$rc" = 0 ]; then state=success; desc="Approved by an owner who isn't the requester, on this commit"
+          elif [ "$rc" = 1 ]; then state=failure; desc="Waiting for an owner's approval (the requester's doesn't count)"
+          else state=error; desc="The check couldn't run; see the run"; fi
+          gh api "repos/${{ github.repository }}/statuses/$HEAD_SHA" -f state="$state" -f context=separation-of-duties \
+            -f description="$desc" -f target_url="$RUN_URL" >/dev/null
+          echo "separation-of-duties: $state" >> "$GITHUB_STEP_SUMMARY"
