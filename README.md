@@ -187,6 +187,29 @@ policy requires; locking can't be undone.
 The merged pull requests are the Git-side history. Records aren't kept in Git: the pipeline can't push to a protected
 `main`, and repository admins can rewrite Git history.
 
+## Platform evaluation and model risk validation
+
+A new model is validated against the model it would replace before any project is told about it.
+
+1. **Evaluate**: Actions → `model-evaluation` → the candidate. The pack is `gateway/model-evals/<candidate>.yaml`
+   (candidate, baseline, evaluators with floors, margin, min_coverage, budget, dataset). It runs in the platform
+   evaluation Foundry project, with **the model itself as the target** (no agents), through the gateway connection
+   (`<connection>/<model>`). The same judge scores both. The verdict: coverage, floors, hard stops, no regression within
+   the margin, budget (p95 latency, tokens and cost per answer, from the Foundry run). Only an `onboarded` model is
+   evaluated.
+2. **Evidence**: every run's result, pass or fail, goes to the immutable records store:
+   `<env>/evaluations/<model>/<time>-run<id>.json`.
+3. **Validate** (model risk): on a pass, the workflow opens a pull request that sets the candidate's `governance.yaml`
+   `lifecycle` to `validated`, with `replaces: <baseline>` and the evaluation's evidence. Model risk own that file
+   (CODEOWNERS), so they're asked to review; their approval is the validation. The person who started the evaluation
+   is the commit's author, so their own approval doesn't count. Conditions go in `lifecycle.conditions`.
+4. **Merge**: the deployment writes the decision record, and the registry shows `lifecycle: validated` and `replaces`.
+   Project repositories read the registry and open their own adoption issues; the platform doesn't write into them.
+
+Variables of environment `model-dev`: `EVAL_PROJECT_ENDPOINT` (the platform evaluation project), `EVAL_CONNECTION`
+(its gateway connection). Repository variable `EVAL_JUDGE_MODEL` (default `gpt-5.1`), unless the pack sets
+`judge_model`.
+
 ## Two repositories
 
 | | **ai-gateway**, this repository (platform team) | **agent-deployment** (use-case teams) |
@@ -339,8 +362,9 @@ See [Shared policy](#shared-policy-policy-fragments), [Kill switches](#kill-swit
 | `gateway/scripts/` | model smoke test, Developer Portal publishing |
 | `.github/workflows/` | `gateway-policy-deployment.yml`, `model-platform-deployment.yml`, `ci.yml`, and the units `_policies`, `_models` |
 | `.github/actions/` | shared steps: `setup` (Python, Terraform, Azure sign-in), `tf-init` (state backend) |
-| `scripts/intake.py`, `scripts/approval_check.py`, `scripts/record.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check; decision records |
+| `scripts/intake.py`, `scripts/approval_check.py`, `scripts/record.py`, `scripts/model_eval.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check; decision records; platform evaluation |
 | `.github/CODEOWNERS` | who must approve which files |
+| `gateway/model-evals/<candidate>.yaml` | platform evaluation packs |
 | `scripts/release_plan.py` | which stages run and whether each pipeline has a change (their `plan` job) |
 | `scripts/set_github_environment.sh`, `gateway/scripts/platform_env.py` | setting an environment's GitHub variables; reading them |
 

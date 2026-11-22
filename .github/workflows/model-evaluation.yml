@@ -1,0 +1,96 @@
+# Platform model evaluation (Phase 1 step 3, test bed G4): a candidate model against the model it would replace, then
+# the pull request in which model risk validates it. Run by hand by the platform team (Actions > model-evaluation).
+#
+#   evaluate     scripts/model_eval.py run: in the platform evaluation Foundry project (variables EVAL_PROJECT_ENDPOINT,
+#                EVAL_CONNECTION of environment model-dev), the model itself as the target, through the gateway; the
+#                pack in gateway/model-evals/<candidate>.yaml; verdict = coverage, floors, hard stops, no regression,
+#                budget
+#   record       the evaluation record (pass or fail) goes to the immutable records store as evidence:
+#                <env>/evaluations/<model>/<time>-run<id>.json
+#   propose      on a pass only: a pull request that sets the candidate's governance.yaml lifecycle to validated, with
+#                replaces: <baseline> and a link to the evidence. Model risk (CODEOWNERS of governance.yaml) reviews
+#                it; its approval is the validation. The person who started the run is the commit's author, so their
+#                approval doesn't count (check separation-of-duties).
+#
+# After the merge, the deployment writes the decision record and the registry shows the model as validated; each
+# project repository finds out from the registry (it opens its own adoption issues).
+name: model-evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: "Candidate model: the pack gateway/model-evals/<candidate>.yaml"
+        required: true
+
+permissions:
+  id-token: write
+  contents: write        # the validation pull request's branch
+  pull-requests: write
+  actions: write         # start ci and the plan on that branch
+
+concurrency:
+  group: model-evaluation-${{ inputs.candidate }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash   # -eo pipefail
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    environment: model-dev
+    env:
+      PACK: gateway/model-evals/${{ inputs.candidate }}.yaml
+      EVAL_PROJECT_ENDPOINT: ${{ vars.EVAL_PROJECT_ENDPOINT }}
+      EVAL_CONNECTION: ${{ vars.EVAL_CONNECTION }}
+      EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL || 'gpt-5.1' }}
+      RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
+      RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Evaluate the candidate against the model it would replace
+        id: run
+        run: |
+          [ -f "$PACK" ] || { echo "::error::No evaluation pack $PACK"; exit 1; }
+          rc=0; python scripts/model_eval.py run "$PACK" "$RUNNER_TEMP/evaluation.json" || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          [ -f "$RUNNER_TEMP/evaluation.json" ] || exit "$rc"   # no record: the run didn't get that far
+      - name: Keep the evaluation record as evidence (immutable store)
+        id: record
+        run: |
+          blob="dev/evaluations/${{ inputs.candidate }}/$(date -u +%Y%m%dT%H%M%SZ)-run${{ github.run_id }}.json"
+          mkdir -p "$RUNNER_TEMP/evidence"
+          cp "$RUNNER_TEMP/evaluation.json" "$RUNNER_TEMP/evidence/${blob//\//__}"
+          python scripts/record.py upload "$RUNNER_TEMP/evidence"
+          echo "blob=$blob" >> "$GITHUB_OUTPUT"
+          echo "Evidence: \`records/$blob\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: The verdict
+        if: steps.run.outputs.rc != '0'
+        run: |
+          echo "::error::The evaluation failed (see the summary). The candidate stays onboarded; no validation is proposed. The result is kept as evidence."
+          exit 1
+      - name: Propose validation (pull request for model risk)
+        run: |
+          model=${{ inputs.candidate }}
+          branch="validate/$model-run${{ github.run_id }}"
+          python scripts/model_eval.py propose "$PACK" "$RUNNER_TEMP/evaluation.json" "${{ steps.record.outputs.blob }}" > pr.md
+          git config user.name "model-evaluation"; git config user.email "model-evaluation@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add gateway/foundry-accounts
+          # The person who started the evaluation is the author: separation-of-duties won't count their approval.
+          git commit -q --author "${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>" \
+            -m "Validate model $model (evaluation run ${{ github.run_id }})" -m "Evidence: records/${{ steps.record.outputs.blob }}"
+          git push -q -u origin "$branch"
+          url=$(gh pr create --base main --head "$branch" --title "Validate model $model: platform evaluation passed" --body-file pr.md)
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run model-platform-deployment.yml --ref "$branch" -f plan_only=true
+          echo "Validation pull request: $url" >> "$GITHUB_STEP_SUMMARY"
