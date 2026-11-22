@@ -43,7 +43,8 @@ locals {
       status       = m.status
       purpose      = try(m.purpose, "serving") # judge: scores evaluations; onboarding turns Prompt Shields off for it
       profile      = m.profile                 # model type: chooses the evaluation pack
-      governance   = m.governance              # governance.yaml: tier, AICOE tier record, AIIA, affects people, sponsor, intake issue
+      governance   = m.governance              # governance.yaml: tier, AICOE record, AIIA, people impact, sponsor, intake, lifecycle
+      lifecycle    = m.governance.lifecycle.state
       format       = m.model.format
       model        = m.model.name
       version      = m.model.version

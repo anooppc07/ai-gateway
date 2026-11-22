@@ -2,7 +2,8 @@
 # state ai-gateway-models-<env>.tfstate: the models of the hosting accounts whose account.yaml has environment: <env>
 # (gateway/foundry-accounts/<account>/models/<model>/): deployment, backend, kill switch ks-model-<model>, registry
 # entry model-meta-<model>, the model catalog product. Then the smoke test and the Developer Portal.
-# plan_only: plan, nothing changes.
+# plan_only: plan, nothing changes. After apply and smoke test: one decision record per changed model, written to
+# immutable storage (scripts/record.py; GitHub environment variable RECORDS_STORAGE_ACCOUNT).
 name: _models
 
 on:
@@ -14,6 +15,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  pull-requests: read   # decision records: the merged pull request and its approvals
 
 defaults:
   run:
@@ -47,6 +49,15 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # decision records compare with the previous commit of main
+      - name: Decision records can be written
+        if: ${{ !inputs.plan_only }}
+        run: |
+          if [ -z "${{ vars.RECORDS_STORAGE_ACCOUNT }}" ]; then
+            echo "::error::GitHub environment variable RECORDS_STORAGE_ACCOUNT isn't set: a deployment without its decision record isn't allowed. See README, Decision records."
+            exit 1
+          fi
       - uses: ./.github/actions/setup
         with:
           terraform: "true"
@@ -72,3 +83,16 @@ jobs:
         run: |
           python gateway/scripts/model_smoke.py models
           python gateway/scripts/publish_portal.py "models ${GITHUB_SHA::7}"
+      - name: Decision records (immutable storage)
+        if: ${{ !inputs.plan_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          BEFORE_SHA: ${{ github.event.before }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
+          RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}
+        run: |
+          python scripts/record.py build "$RUNNER_TEMP/records" | tee records.txt
+          python scripts/record.py upload "$RUNNER_TEMP/records"
+          { echo "### Decision records (${{ inputs.environment }})"; echo; sed 's/^/- /' records.txt; } >> "$GITHUB_STEP_SUMMARY"
