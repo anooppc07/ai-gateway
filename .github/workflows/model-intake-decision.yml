@@ -1,0 +1,93 @@
+# Reports the approvers' decision on an intake pull request back on the request (issue), for a requester who doesn't
+# follow pull requests. The decision itself is the pull request review; this only tells people about it.
+#
+#   review: changes requested   comment on the request with what to change; label intake:changes-requested
+#   review: approved            comment on the request (who approved; other approvals may still be needed)
+#   closed without merging      rejected: label intake:rejected, the reviewer's reason, the request is closed
+#   merged                      the approval record on the request: approvers on the merged commit, who merged it, the
+#                               commit; label onboarding:approved
+name: model-intake-decision
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash   # -eo pipefail
+
+jobs:
+  report:
+    if: startsWith(github.event.pull_request.head.ref, 'intake/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      REF: ${{ github.event.pull_request.head.ref }}
+      PR: ${{ github.event.pull_request.number }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      ACTOR: ${{ github.event.sender.login }}
+      EVENT: ${{ github.event_name }}
+      REVIEW_STATE: ${{ github.event.review.state }}
+      REVIEW_BODY: ${{ github.event.review.body }}
+      MERGED: ${{ github.event.pull_request.merged }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Report the decision on the request
+        run: |
+          issue=$(sed -E 's#^intake/([0-9]+)-.*#\1#' <<<"$REF")
+          label() { gh label create "$1" --force --color "$2" --description "$3" >/dev/null; gh issue edit "$issue" --add-label "$1"; }
+          unlabel() { for l in "$@"; do gh issue edit "$issue" --remove-label "$l" 2>/dev/null || true; done; }
+
+          if [ "$EVENT" = "pull_request_review" ]; then
+            case "$REVIEW_STATE" in
+              changes_requested)
+                unlabel onboarding:in-review
+                label intake:changes-requested fbca04 "Next: the requester changes the request"
+                printf '### Changes requested by @%s\n\n%s\n\n**Next:** edit this request to address it. The pull request updates itself and goes back to review.\n' \
+                  "$ACTOR" "${REVIEW_BODY:-_(no comment given)_}" > c.md ;;
+              approved)
+                printf 'Approved by @%s on %s. The change merges once every required approver has approved ([status](%s)).\n' \
+                  "$ACTOR" "$PR_URL" "$PR_URL/checks" > c.md ;;
+              *) exit 0 ;;
+            esac
+            gh issue comment "$issue" --body-file c.md
+            exit 0
+          fi
+
+          unlabel onboarding:in-review intake:changes-requested
+          if [ "$MERGED" != "true" ]; then
+            reason=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate --jq "[.[] | select(.user.login == \"$ACTOR\")] | last | .body // empty" | tail -1)
+            label intake:rejected b60205 "Rejected by the approvers"
+            printf '### Intake: rejected\n\nRejected by @%s when closing %s.\n\n**Reason:** %s\n' "$ACTOR" "$PR_URL" "${reason:-_(no reason given on the pull request)_}" > c.md
+            gh issue comment "$issue" --body-file c.md
+            gh issue close "$issue" --reason "not planned"
+            exit 0
+          fi
+
+          # The approval record: approvals given on the commit that was merged.
+          approvers=$(gh api "repos/$GH_REPO/pulls/$PR/reviews" --paginate --jq '.[]' | jq -rs --arg sha "$HEAD_SHA" '
+            map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
+            | group_by(.user.login) | map(last) | map(select(.state == "APPROVED" and .commit_id == $sha))
+            | map("@\(.user.login) (\(.submitted_at))") | join(", ")')
+          label onboarding:approved 0e8a16 "Approved and merged. Next: deployment and evaluation"
+          {
+            echo "### Intake: approved"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Approved by | ${approvers:-none recorded} |"
+            echo "| Approved change | \`${HEAD_SHA:0:7}\` in $PR_URL |"
+            echo "| Merged by | @$ACTOR, merge commit \`${MERGE_SHA:0:7}\` |"
+            echo
+            echo "**Next:** the platform deploys the model in dev; projects get it after evaluation and approval. From now on this request is a record: changes go by pull request."
+          } > c.md
+          gh issue comment "$issue" --body-file c.md

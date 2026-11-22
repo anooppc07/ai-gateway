@@ -1,0 +1,42 @@
+# Required check on main: every changed file is approved by a code owner who didn't ask for, open or write the change,
+# on the pull request's current commit (scripts/approval_check.py). Make it required in branch protection (check name
+# separation-of-duties), with "Require review from Code Owners" and "Dismiss stale approvals".
+#
+# A pull request opened or updated by the workflow token (the intake) doesn't start workflows, so this check first
+# runs when a reviewer submits a review. Until then the required check is missing and the pull request can't merge.
+#
+# The check and CODEOWNERS are read from the base branch, not from the pull request, so a change can't loosen the
+# rule that approves it.
+name: separation-of-duties
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: separation-of-duties-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash   # -eo pipefail
+
+jobs:
+  separation-of-duties:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Approved by an owner who isn't the requester, author or a committer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/approval_check.py

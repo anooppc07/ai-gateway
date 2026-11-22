@@ -1,0 +1,8 @@
+# Governance record of this model, owned by model risk (CODEOWNERS): tier, AICOE tier record, AIIA,
+# whether it affects people, sponsor and the intake request. Onboarded before the intake form existed.
+tier: 3
+tier_record: pre-intake (test bed)
+aiia: pre-intake (test bed)
+affects_people: false
+sponsor: ai-platform-team
+intake_issue: null
