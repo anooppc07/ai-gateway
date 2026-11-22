@@ -134,7 +134,7 @@ A model is requested with the **Model onboarding request** issue form and approv
 3. **Approval of record** (the pull request review): GitHub asks the code owners (`.github/CODEOWNERS`) to review.
    - **Model risk** owns `governance.yaml`.
    - **AI platform** owns `model.yaml`, `docs.md` and `tests.yaml`.
-   - They **Approve**, **Request changes** (the requester edits the request) or **close** the pull request to reject it.
+   - They **Approve**, **Request changes** (the requester edits the request) or **close** the pull request to reject it (the requester closing it withdraws the request).
    - `model-intake-decision` reports each decision on the request and, on merge, posts the approval record: who
      approved which commit, and who merged it.
 4. **Merge** deploys and registers the model in dev. No project uses it until it's evaluated and approved for that
