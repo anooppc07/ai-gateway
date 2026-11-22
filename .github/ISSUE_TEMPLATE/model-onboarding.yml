@@ -1,0 +1,121 @@
+# Phase 1, step 1: the front door for onboarding a model (deck slide 4). A workflow (model-intake.yml) checks the
+# request, labels it, and, after a second person approves it (label intake:approved, not the requester), opens the
+# pull request that adds the model to gateway/foundry-accounts/. Nothing reaches Azure until that pull request is merged.
+name: Model onboarding request
+description: Ask the platform to onboard a model (vendor or catalogue model). Captures ownership, use, risk tier and AIIA.
+title: "Onboard model: <model name>"
+labels: ["intake"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in every field. The platform checks the request automatically; a second person (not you) approves it,
+        then a pull request adds the model. Evaluations, MRM validation and approval follow before any project can use it.
+  - type: input
+    id: model_name
+    attributes:
+      label: Model name
+      description: The provider's model name, as deployed (for example gpt-5.4-mini).
+      placeholder: gpt-5.4-mini
+    validations:
+      required: true
+  - type: input
+    id: model_version
+    attributes:
+      label: Model version
+      description: The exact version to pin (for example 2026-03-17). "latest" or an empty version is refused.
+      placeholder: "2026-03-17"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - Azure OpenAI (Foundry Models sold by Azure)
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Model type
+      description: Chooses the evaluation pack.
+      options:
+        - general-purpose
+        - reasoning
+        - embedding
+    validations:
+      required: true
+  - type: input
+    id: capacity
+    attributes:
+      label: Capacity requested (thousand tokens per minute)
+      placeholder: "20"
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Model owner
+      description: GitHub user who owns the model (accountable for it).
+      placeholder: "@anooppc07"
+    validations:
+      required: true
+  - type: input
+    id: sponsor
+    attributes:
+      label: Model sponsor
+      description: The business sponsor (name or GitHub user).
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Business use case
+      description: What the model will be used for, by whom.
+    validations:
+      required: true
+  - type: textarea
+    id: intended_use
+    attributes:
+      label: Intended use and limitations
+      description: What it should and shouldn't be used for. Published with the model's documentation.
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Risk tier
+      description: From the AICOE tier record. Tier 0 is prohibited.
+      options:
+        - Tier 1 (high)
+        - Tier 2
+        - Tier 3
+        - Tier 4 (limited risk)
+        - Tier 0 (prohibited)
+    validations:
+      required: true
+  - type: input
+    id: tier_record
+    attributes:
+      label: AICOE tier record ID
+      placeholder: TR-2026-0001
+    validations:
+      required: true
+  - type: input
+    id: aiia
+    attributes:
+      label: AI Impact Assessment (AIIA) reference
+      placeholder: AIIA-2026-0001
+    validations:
+      required: true
+  - type: dropdown
+    id: affects_people
+    attributes:
+      label: Does the use case affect people (decisions about individuals)?
+      description: From the AIIA. "Yes" makes a fairness evaluation required.
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
