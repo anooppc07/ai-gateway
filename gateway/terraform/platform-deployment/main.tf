@@ -23,6 +23,17 @@ resource "terraform_data" "model_definitions" {
       condition     = alltrue([for n, m in local.models : contains(["serving", "judge"], try(m.purpose, "serving"))])
       error_message = "purpose must be 'serving' (default) or 'judge' (scores evaluations only)."
     }
+    # Phase 1 governance metadata, from the intake request: no model is onboarded without it.
+    precondition {
+      condition     = alltrue([for n, m in local.models : contains(["general-purpose", "reasoning", "embedding"], try(m.profile, ""))])
+      error_message = "profile is required: general-purpose, reasoning or embedding (model.yaml; from the intake request)."
+    }
+    precondition {
+      condition = alltrue([for n, m in local.models : (
+        contains([1, 2, 3, 4], try(m.governance.tier, 0)) && try(m.governance.tier_record, "") != "" && try(m.governance.aiia, "") != ""
+      )])
+      error_message = "governance.tier (1-4; tier 0 is prohibited), governance.tier_record and governance.aiia are required (model.yaml; from the intake request)."
+    }
     # Pinned versions: Azure must never swap the version that was evaluated and approved. A new version is
     # onboarded as its own model folder and evaluated before any project uses it.
     precondition {

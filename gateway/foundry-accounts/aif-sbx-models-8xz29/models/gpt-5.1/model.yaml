@@ -5,6 +5,14 @@ api: openai
 status: active
 purpose: judge                             # scores evaluations only: Prompt Shields off for it (registry), harm categories on
 owner: ai-platform-team
+profile: general-purpose                   # model type: chooses the evaluation pack
+governance:                                # Phase 1: from the intake request (onboarded before the intake form existed)
+  tier: 3
+  tier_record: pre-intake (test bed)
+  aiia: pre-intake (test bed)
+  affects_people: false
+  sponsor: ai-platform-team
+  intake_issue: null
 
 model:
   format: OpenAI

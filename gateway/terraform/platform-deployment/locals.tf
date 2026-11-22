@@ -39,6 +39,8 @@ locals {
       api          = m.api
       status       = m.status
       purpose      = try(m.purpose, "serving") # judge: scores evaluations; onboarding turns Prompt Shields off for it
+      profile      = m.profile                 # model type: chooses the evaluation pack
+      governance   = m.governance              # tier, AICOE tier record, AIIA, affects people, sponsor, intake issue
       format       = m.model.format
       model        = m.model.name
       version      = m.model.version
