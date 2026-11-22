@@ -1,10 +1,11 @@
 # Model intake (Phase 1, step 1): the "Model onboarding request" issue form is the front door.
 #
-#   issue opened or edited   check the request (scripts/intake.py): completeness, pinned version, tier 0 refused;
-#                            labels intake:complete | intake:incomplete | intake:refused, tier:<n>, profile:<type>;
-#                            one comment with the result, kept up to date
-#   label intake:approved    by a second person (not the requester) on a complete request: opens the pull request that
-#                            adds the model folder; links the issue and the pull request
+#   issue opened or edited   intake:submitted, then the check (scripts/intake.py): completeness, pinned version, tier 0
+#                            refused. Stage labels: intake:needs-info (requester fixes) | intake:ready-for-review (a
+#                            second reviewer decides) | intake:refused (tier 0, closed); plus tier:<n>, profile:<type>.
+#                            One comment with the result and the next step, kept up to date
+#   label intake:approved    by a second person (not the requester) on a request ready for review: opens the pull
+#                            request that adds the model folder; label onboarding:in-progress; links issue and PR
 # Nothing reaches Azure here: the pull request goes through ci and model-platform-deployment like any change.
 # No stored token: the workflow's own short-lived token opens the pull request. Such a pull request doesn't start other
 # workflows by itself, so the workflow starts ci and a plan-only model-platform-deployment on its branch (dispatch);
@@ -38,17 +39,27 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Check the request and label it
         run: |
+          gh label create intake:submitted --force --color ededed --description "Request opened; the intake check is running" >/dev/null
+          gh issue edit "$ISSUE" --add-label intake:submitted
           python scripts/intake.py check > result.json
-          for l in intake:complete intake:incomplete intake:refused; do gh issue edit "$ISSUE" --remove-label "$l" 2>/dev/null || true; done
+          for l in intake:submitted intake:ready-for-review intake:needs-info intake:refused intake:complete intake:incomplete; do
+            gh issue edit "$ISSUE" --remove-label "$l" 2>/dev/null || true
+          done
           for l in $(jq -r '.labels[]' result.json); do
-            gh label create "$l" --force --color "$(case $l in intake:complete) echo 0e8a16;; intake:refused) echo b60205;; intake:incomplete) echo fbca04;; *) echo c5def5;; esac)" >/dev/null
+            case $l in
+              intake:ready-for-review) c=0e8a16; d="Check passed. Next: a second reviewer (not the requester) adds intake:approved";;
+              intake:needs-info) c=fbca04; d="Check found problems. Next: the requester edits the issue";;
+              intake:refused) c=b60205; d="Refused (tier 0 is prohibited)";;
+              *) c=c5def5; d="";;
+            esac
+            gh label create "$l" --force --color "$c" --description "$d" >/dev/null
             gh issue edit "$ISSUE" --add-label "$l"
           done
           {
             echo "<!-- intake-check -->"
-            if [ "$(jq -r .refused result.json)" = "true" ]; then echo "### Intake: refused";
-            elif [ "$(jq -r .complete result.json)" = "true" ]; then echo "### Intake: complete"; echo; echo "Model \`$(jq -r .model result.json)\`, tier $(jq -r .tier result.json). A second person (not the requester) approves the request with the label **intake:approved**; the platform then opens the pull request that adds the model.";
-            else echo "### Intake: incomplete"; echo; echo "Edit the request to fix:"; fi
+            if [ "$(jq -r .refused result.json)" = "true" ]; then echo "### Intake: refused"; echo; echo "**Next:** nothing; the request is closed.";
+            elif [ "$(jq -r .complete result.json)" = "true" ]; then echo "### Intake: ready for review"; echo; echo "The automatic check passed for model \`$(jq -r .model result.json)\`, tier $(jq -r .tier result.json)."; echo; echo "**Next:** a second reviewer (not the requester) reviews the request and adds the label **intake:approved**. The platform then opens the pull request that adds the model.";
+            else echo "### Intake: needs information"; echo; echo "**Next:** the requester edits the request to fix:"; fi
             jq -r '.errors[] | "- " + .' result.json
           } > comment.md
           id=$(gh api "repos/${{ github.repository }}/issues/$ISSUE/comments" --jq '[.[] | select(.body | startswith("<!-- intake-check -->"))][0].id // empty')
@@ -78,7 +89,7 @@ jobs:
           python scripts/intake.py check > result.json
           if [ "$(jq -r .complete result.json)" != "true" ]; then
             gh issue edit "$ISSUE_NUMBER" --remove-label intake:approved
-            gh issue comment "$ISSUE_NUMBER" --body "The request isn't complete yet, so it can't be approved. See the intake check above."
+            gh issue comment "$ISSUE_NUMBER" --body "The request isn't ready for review yet (the check found problems), so it can't be approved. See the intake check above."
             exit 1
           fi
       - name: Open the pull request that adds the model
@@ -90,7 +101,7 @@ jobs:
           git checkout -b "$branch"
           git add "$folder"
           git commit -m "Onboard model $model (intake #$ISSUE_NUMBER, tier $tier)" -m "Requested by @$REQUESTER, intake approved by @$APPROVER."
-          git push -u origin "$branch"
+          git push --force -u origin "$branch"   # re-runnable: the intake branch is only ever written by this workflow
           {
             echo "Onboards **\`$model\`** from intake #$ISSUE_NUMBER (tier $tier, $(jq -r .fields.profile result.json))."
             echo
@@ -98,9 +109,14 @@ jobs:
             echo "- Governance fields in \`model.yaml\` come from the request: tier, AICOE tier record, AIIA, affects people, sponsor."
             echo "- Version pinned (\`NoAutoUpgrade\`). Merging deploys and registers the model; no project can use it until it's evaluated, validated by MRM and approved."
           } > pr.md
-          url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md)
-          gh label create intake:pr-opened --force --color 1d76db >/dev/null
-          gh issue edit "$ISSUE_NUMBER" --add-label intake:pr-opened
+          url=$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')
+          if [ -z "$url" ]; then
+            url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md) || {
+              echo "::error::Couldn't open the pull request. If the error says GitHub Actions isn't permitted to create pull requests: Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests, then re-run."
+              exit 1; }
+          fi
+          gh label create onboarding:in-progress --force --color 1d76db --description "Model pull request opened. Next: evaluation, MRM validation and approval" >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --remove-label intake:ready-for-review --add-label onboarding:in-progress
           gh workflow run ci.yml --ref "$branch"
           gh workflow run model-platform-deployment.yml --ref "$branch" -f plan_only=true
           gh issue comment "$ISSUE_NUMBER" --body "Intake approved by @$APPROVER. Pull request: $url (its checks and the dev plan are started on the branch)."

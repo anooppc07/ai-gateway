@@ -87,7 +87,8 @@ def check(fields):
     elif name and os.path.isdir(os.path.join(ACCOUNTS, account, "models", name)):
         errors.append(f"Model `{name}` is already onboarded in `{account}`: a new version is a change to its model.yaml.")
     tier_n = tier.split()[1] if tier.startswith("Tier ") and len(tier.split()) > 1 else ""
-    labels = ["intake", "intake:refused" if refused else ("intake:complete" if not errors else "intake:incomplete")]
+    # Stage labels: where the request is, and who acts next.
+    labels = ["intake", "intake:refused" if refused else ("intake:ready-for-review" if not errors else "intake:needs-info")]
     if tier_n:
         labels.append(f"tier:{tier_n}")
     if fields.get("profile") in PROFILES:
