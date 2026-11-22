@@ -24,6 +24,9 @@ locals {
     for f in fileset(local.accounts_dir, "*/models/*/model.yaml") :
     basename(dirname(f)) => merge(yamldecode(file("${local.accounts_dir}/${f}")), {
       account = split("/", f)[0]
+      # Governance record, a file of its own so model risk owns it (CODEOWNERS) and platform owns model.yaml.
+      governance        = try(yamldecode(file("${local.accounts_dir}/${dirname(f)}/governance.yaml")), null)
+      governance_inline = try(yamldecode(file("${local.accounts_dir}/${f}")).governance, null) != null
       # APIM resource names allow no dots: gpt-5.4-mini -> gpt-5-4-mini
       key        = replace(basename(dirname(f)), ".", "-")
       backend_id = replace("model-${split("/", f)[0]}-${yamldecode(file("${local.accounts_dir}/${f}")).deployment.name}", ".", "-")
@@ -40,7 +43,7 @@ locals {
       status       = m.status
       purpose      = try(m.purpose, "serving") # judge: scores evaluations; onboarding turns Prompt Shields off for it
       profile      = m.profile                 # model type: chooses the evaluation pack
-      governance   = m.governance              # tier, AICOE tier record, AIIA, affects people, sponsor, intake issue
+      governance   = m.governance              # governance.yaml: tier, AICOE tier record, AIIA, affects people, sponsor, intake issue
       format       = m.model.format
       model        = m.model.name
       version      = m.model.version

@@ -1,9 +1,12 @@
-"""Model onboarding intake (Phase 1, step 1): checks a "Model onboarding request" issue and, once a second person has
-approved it, writes the model folder the pull request adds.
+"""Model onboarding intake (Phase 1, step 1): checks a "Model onboarding request" issue and writes the model folder of
+the pull request that the approvers review. The pull request review is the approval of record.
 
   intake.py check                 reads ISSUE_BODY; prints a JSON result {complete, refused, errors, labels, fields}
-  intake.py render <out_dir>      reads ISSUE_BODY and ISSUE_NUMBER; writes model.yaml, docs.md, tests.yaml into
+  intake.py render <out_dir>      reads ISSUE_BODY, ISSUE_NUMBER, REQUESTER; writes model.yaml and docs.md, tests.yaml
+                                  (AI platform owns them) and governance.yaml (model risk owns it) into
                                   <out_dir>/<hosting account>/models/<model>/ and prints that folder
+  intake.py summary               reads ISSUE_BODY, ISSUE_NUMBER, REQUESTER; prints the pull request description: a
+                                  plain-language summary for approvers who don't read YAML
 
 The issue form is .github/ISSUE_TEMPLATE/model-onboarding.yml. GitHub renders each field as "### <label>" followed by
 the value ("_No response_" when empty).
@@ -97,7 +100,7 @@ def check(fields):
             "model": name, "tier": tier_n, "account": account}
 
 
-def render(fields, issue, out_dir):
+def render(fields, issue, out_dir, requester):
     r = check(fields)
     if not r["complete"]:
         sys.exit("The request isn't complete: " + " ".join(r["errors"]))
@@ -111,14 +114,6 @@ def render(fields, issue, out_dir):
         "purpose": "serving",
         "profile": fields["profile"],
         "owner": fields["owner"].lstrip("@"),
-        "governance": {
-            "tier": int(r["tier"]),
-            "tier_record": fields["tier_record"],
-            "aiia": fields["aiia"],
-            "affects_people": fields["affects_people"] == "Yes",
-            "sponsor": fields["sponsor"],
-            "intake_issue": int(issue),
-        },
         "model": {"format": "OpenAI", "name": name, "version": fields["model_version"]},
         "deployment": {"name": name, "sku": "GlobalStandard", "capacity": int(fields["capacity"]),
                        "version_upgrade": "NoAutoUpgrade", "existing": False},
@@ -126,8 +121,21 @@ def render(fields, issue, out_dir):
         "docs_file": "docs.md",
         "tests_file": "tests.yaml",
     }
-    header = (f"# Onboarded from intake issue #{issue}. Governance fields come from the request; change them by a\n"
-              "# reviewed pull request, not by editing the issue.\n")
+    governance = {
+        "tier": int(r["tier"]),
+        "tier_record": fields["tier_record"],
+        "aiia": fields["aiia"],
+        "affects_people": fields["affects_people"] == "Yes",
+        "sponsor": fields["sponsor"],
+        "intake_issue": int(issue),
+        "requested_by": requester,
+    }
+    with open(os.path.join(folder, "governance.yaml"), "w", encoding="utf-8") as fh:
+        fh.write(f"# Governance record of {name}, from intake request #{issue}. Owned by model risk (CODEOWNERS): changed\n"
+                 "# only by a reviewed pull request. The requester can't approve it (check separation-of-duties).\n"
+                 + yaml.safe_dump(governance, sort_keys=False))
+    header = (f"# Onboarded from intake issue #{issue}. Owned by the AI platform (CODEOWNERS); the governance record is\n"
+              "# governance.yaml, owned by model risk.\n")
     with open(os.path.join(folder, "model.yaml"), "w", encoding="utf-8") as fh:
         fh.write(header + yaml.safe_dump(model, sort_keys=False))
     with open(os.path.join(folder, "docs.md"), "w", encoding="utf-8") as fh:
@@ -143,11 +151,63 @@ def render(fields, issue, out_dir):
     return folder
 
 
+def summary(fields, issue, requester):
+    """Pull request description: what the approvers decide, in plain language, before any file."""
+    r = check(fields)
+    people = "**Yes**: decisions about individuals" if fields.get("affects_people") == "Yes" else "No"
+    return f"""## What you are approving
+
+Onboarding model **{r['model']}** (version {fields['model_version']}, {fields['provider']}), requested by @{requester} in #{issue}.
+
+| | |
+|---|---|
+| Business use case | {one_line(fields['use_case'])} |
+| Model type | {fields['profile']} |
+| Risk tier | {r['tier']} (AICOE record {one_line(fields['tier_record'])}) |
+| AI Impact Assessment | {one_line(fields['aiia'])} |
+| Affects people | {people} |
+| Sponsor / owner | {one_line(fields['sponsor'])} / @{fields['owner'].lstrip('@')} |
+| Capacity | {fields['capacity']}k tokens per minute, version pinned (no automatic upgrade) |
+
+**Intended use and limitations**
+
+{fields['intended_use'].strip()}
+
+**What merging does:** deploys the model in dev and registers it in the gateway. No project can use it until it has been
+evaluated and approved for that project.
+
+## Who approves
+
+| Role | Reviews | File |
+|---|---|---|
+| Model risk | Tier, AICOE record, AIIA, people impact | `governance.yaml` |
+| AI platform | Capacity, version, deployment | `model.yaml`, `docs.md`, `tests.yaml` |
+
+GitHub asks both (CODEOWNERS). The requester (@{requester}) can't approve: the check **separation-of-duties** ignores
+their approval. An approval counts only for the version it was given on; if the request changes, approve again.
+
+## How to decide
+
+- **Approve:** *Files changed* → *Review changes* → **Approve** (also works in the GitHub Mobile app).
+- **Send back:** *Review changes* → **Request changes**, with what's missing. The requester updates the request (#{issue});
+  this pull request updates itself.
+- **Reject:** close this pull request with a comment saying why. The request is closed as rejected.
+
+Don't edit the files here: changes come from the request, so the record stays in one place.
+"""
+
+
+def one_line(text):
+    return " ".join((text or "").split()).replace("|", "\\|")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "render"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "render", "summary"):
         sys.exit(__doc__)
     f = parse(os.environ.get("ISSUE_BODY", ""))
     if sys.argv[1] == "check":
         print(json.dumps(check(f)))
+    elif sys.argv[1] == "render":
+        print(render(f, os.environ["ISSUE_NUMBER"], sys.argv[2], os.environ["REQUESTER"]))
     else:
-        print(render(f, os.environ["ISSUE_NUMBER"], sys.argv[2]))
+        print(summary(f, os.environ["ISSUE_NUMBER"], os.environ["REQUESTER"]))

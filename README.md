@@ -122,6 +122,40 @@ The project repository's pipelines use the same pipeline identity with further r
 README). In the sandbox, `id-sbx-pipeline` has Contributor on the resource group, which covers the Contributor-level
 rows.
 
+## Model onboarding and approval
+
+A model is requested with the **Model onboarding request** issue form and approved by **reviewing its pull request**.
+
+1. **Request** (issue form): model, version, use case, risk tier, AICOE tier record, AIIA, people impact, owner,
+   sponsor. `model-intake` checks it (complete, version pinned, tier 0 refused) and says what to fix.
+2. **Pull request**: once the request passes, `model-intake` writes the model folder and opens the pull request. Its
+   description is a plain-language summary, so an approver doesn't need to read YAML. Editing the request updates the
+   pull request.
+3. **Approval of record** (the pull request review): GitHub asks the code owners (`.github/CODEOWNERS`) to review.
+   - **Model risk** owns `governance.yaml`.
+   - **AI platform** owns `model.yaml`, `docs.md` and `tests.yaml`.
+   - They **Approve**, **Request changes** (the requester edits the request) or **close** the pull request to reject it.
+   - `model-intake-decision` reports each decision on the request and, on merge, posts the approval record: who
+     approved which commit, and who merged it.
+4. **Merge** deploys and registers the model in dev. No project uses it until it's evaluated and approved for that
+   project.
+
+**Separation of duties.** The pull request is opened by the workflow bot, so GitHub's own "authors can't approve" rule
+doesn't stop the requester. The required check `separation-of-duties` (`scripts/approval_check.py`) passes only when
+every changed file is approved by one of its code owners who isn't the requester, the pull request author or a
+committer. The approval must be on the current commit, and the check reads its rules from the base branch.
+
+Branch protection on `main` (Settings > Branches) makes this binding:
+- Require a pull request, with 1 approval.
+- Require review from Code Owners.
+- Dismiss stale approvals when new commits are pushed.
+- Required status check `separation-of-duties`.
+- Do not allow bypassing.
+
+**Test bed.** One account stands in for both teams, so one approval covers both roles: it shows the mechanism, not
+two real teams. In the bank, CODEOWNERS names teams (`@<org>/model-risk`, `@<org>/ai-platform`), and the check needs a
+token that can read team membership.
+
 ## Two repositories
 
 | | **ai-gateway**, this repository (platform team) | **agent-deployment** (use-case teams) |
@@ -267,13 +301,15 @@ See [Shared policy](#shared-policy-policy-fragments), [Kill switches](#kill-swit
 | Path | What it is |
 |---|---|
 | `gateway/sandbox/` | the disposable sandbox platform (Terraform, local state), see [gateway/sandbox/README.md](gateway/sandbox/README.md) |
-| `gateway/foundry-accounts/<account>/` | hosting accounts and their models (`model.yaml`, `docs.md`, `tests.yaml`) |
+| `gateway/foundry-accounts/<account>/` | hosting accounts and their models (`model.yaml`, `docs.md`, `tests.yaml`: AI platform; `governance.yaml`: model risk) |
 | `gateway/terraform/platform-deployment/` | model platform deployment stack |
 | `gateway/policy-fragments/<id>.xml` | the shared policy logic, one APIM policy fragment per file |
 | `gateway/terraform/gateway-policies/` | gateway policy stack: fragments, global kill switch, tenant, Content Safety backend |
 | `gateway/scripts/` | model smoke test, Developer Portal publishing |
 | `.github/workflows/` | `gateway-policy-deployment.yml`, `model-platform-deployment.yml`, `ci.yml`, and the units `_policies`, `_models` |
 | `.github/actions/` | shared steps: `setup` (Python, Terraform, Azure sign-in), `tf-init` (state backend) |
+| `scripts/intake.py`, `scripts/approval_check.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check |
+| `.github/CODEOWNERS` | who must approve which files |
 | `scripts/release_plan.py` | which stages run and whether each pipeline has a change (their `plan` job) |
 | `scripts/set_github_environment.sh`, `gateway/scripts/platform_env.py` | setting an environment's GitHub variables; reading them |
 

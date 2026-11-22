@@ -1,0 +1,17 @@
+# Who must approve a change to main. Branch protection: "Require review from Code Owners" and the required check
+# separation-of-duties (scripts/approval_check.py: an owner other than the requester, author or committers approves,
+# on the current commit). The last matching line wins.
+#
+# Test bed: one account stands in for each team, so one approval covers both roles. In the bank, use teams:
+#   AI platform   @<org>/ai-platform     everything by default, and the pipelines and checks themselves
+#   Model risk    @<org>/model-risk      each model's governance record
+# (Team owners need the check's token to read team membership: a GitHub App token, not the workflow token.)
+
+*                                                       @dreadnaught07
+
+# AI platform: pipelines, checks and this file. A change to the check is approved like any other change.
+/.github/                                               @dreadnaught07
+/scripts/                                               @dreadnaught07
+
+# Model risk: tier, AICOE tier record, AIIA, people impact, sponsor, intake request.
+/gateway/foundry-accounts/*/models/*/governance.yaml    @dreadnaught07
