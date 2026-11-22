@@ -29,6 +29,10 @@ concurrency:
   group: gateway-policy-deployment-${{ github.ref }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash   # -eo pipefail: "terraform plan | tee" fails the step when the plan fails
+
 jobs:
   plan:
     runs-on: ubuntu-latest
