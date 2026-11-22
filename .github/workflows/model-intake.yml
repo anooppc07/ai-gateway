@@ -6,9 +6,9 @@
 #   label intake:approved    by a second person (not the requester) on a complete request: opens the pull request that
 #                            adds the model folder; links the issue and the pull request
 # Nothing reaches Azure here: the pull request goes through ci and model-platform-deployment like any change.
-# The pull request is opened with secrets.INTAKE_TOKEN when it's set (a fine-grained token: contents, pull requests and
-# issues, read and write, on this repository), so its checks run; a pull request opened with the workflow's own token
-# doesn't start other workflows (close and reopen it to start them).
+# No stored token: the workflow's own short-lived token opens the pull request. Such a pull request doesn't start other
+# workflows by itself, so the workflow starts ci and a plan-only model-platform-deployment on its branch (dispatch);
+# their results show on the pull request.
 name: model-intake
 
 on:
@@ -19,6 +19,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: write   # start ci and the plan on the pull request's branch
 
 concurrency:
   group: model-intake-${{ github.event.issue.number }}
@@ -59,15 +60,13 @@ jobs:
     if: ${{ github.event.action == 'labeled' && github.event.label.name == 'intake:approved' }}
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.INTAKE_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
       ISSUE_BODY: ${{ github.event.issue.body }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       REQUESTER: ${{ github.event.issue.user.login }}
       APPROVER: ${{ github.event.sender.login }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.INTAKE_TOKEN || github.token }}
       - uses: ./.github/actions/setup
       - name: The approver isn't the requester, and the request is complete
         run: |
@@ -102,5 +101,7 @@ jobs:
           url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md)
           gh label create intake:pr-opened --force --color 1d76db >/dev/null
           gh issue edit "$ISSUE_NUMBER" --add-label intake:pr-opened
-          gh issue comment "$ISSUE_NUMBER" --body "Intake approved by @$APPROVER. Pull request: $url"
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run model-platform-deployment.yml --ref "$branch" -f plan_only=true
+          gh issue comment "$ISSUE_NUMBER" --body "Intake approved by @$APPROVER. Pull request: $url (its checks and the dev plan are started on the branch)."
           echo "Pull request: $url" >> "$GITHUB_STEP_SUMMARY"

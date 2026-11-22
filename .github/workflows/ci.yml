@@ -6,6 +6,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:   # model-intake starts it on the pull request it opens (its own token can't trigger pull_request runs)
 
 permissions:
   contents: read
