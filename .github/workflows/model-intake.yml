@@ -76,14 +76,33 @@ jobs:
         run: |
           branch="intake/$ISSUE_NUMBER-$model"
           tier=$(jq -r .tier result.json)
-          folder=$(python scripts/intake.py render gateway/foundry-accounts)
+          # Render from main (the check refuses a model folder that already exists), then put it on the branch.
+          out=$(python scripts/intake.py render "$RUNNER_TEMP/render")
+          folder="gateway/foundry-accounts/${out#"$RUNNER_TEMP/render/"}"
           python scripts/intake.py summary > pr.md
           git config user.name "model-intake"; git config user.email "model-intake@users.noreply.github.com"
-          git checkout -b "$branch"
-          git add "$folder"
-          git commit -m "Onboard model $model (intake #$ISSUE_NUMBER, tier $tier)" -m "Requested by @$REQUESTER."
-          # The intake branch is only ever written by this workflow: each version of the request replaces it.
-          git push --force -u origin "$branch"
+          # Each version of the request is a new commit on top of the last one, never a rewrite, so reviewers see
+          # only what changed ("Changes since your last review") and the history of the request stays on the branch.
+          if git fetch -q origin "$branch" 2>/dev/null; then
+            git checkout -q -B "$branch" FETCH_HEAD
+            first=false
+          else
+            git checkout -q -b "$branch"
+            first=true
+          fi
+          rm -rf "$folder"; mkdir -p "$folder"; cp -r "$out"/. "$folder"/
+          git add -A "$folder"
+          changed=""
+          if git diff --cached --quiet; then
+            echo "The request changed nothing in the model folder."
+          elif [ "$first" = true ]; then
+            git commit -q -m "Onboard model $model (intake #$ISSUE_NUMBER, tier $tier)" -m "Requested by @$REQUESTER."
+          else
+            # What changed, field by field, for the approvers (comment lines and file headers left out).
+            changed=$(git diff --cached -U0 -- "$folder" | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*#' || true)
+            git commit -q -m "Request #$ISSUE_NUMBER changed" -m "Edited by @${{ github.event.sender.login }}."
+          fi
+          git push -q -u origin "$branch"
           pr=$(gh pr list --head "$branch" --state all --json number,state --jq '[.[] | select(.state != "MERGED")][0] // empty')
           if [ -z "$pr" ]; then
             url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md) || {
@@ -96,6 +115,18 @@ jobs:
             gh pr edit "$n" --body-file pr.md
             url=$(gh pr view "$n" --json url --jq .url)
             what="updated (approvals given before this change no longer count)"
+            if [ -n "$changed" ]; then
+              {
+                echo "### The request changed (#$ISSUE_NUMBER)"
+                echo
+                echo "Edited by @${{ github.event.sender.login }}. Approvals given before this change no longer count: please review again. Only this change: **Files changed → Changes since your last review**."
+                echo
+                echo '```diff'
+                echo "$changed"
+                echo '```'
+              } > change.md
+              gh pr comment "$n" --body-file change.md
+            fi
           fi
           gh label create onboarding:in-review --force --color 1d76db --description "Pull request open. Next: model risk and AI platform approve it" >/dev/null
           gh issue edit "$ISSUE_NUMBER" --add-label onboarding:in-review
