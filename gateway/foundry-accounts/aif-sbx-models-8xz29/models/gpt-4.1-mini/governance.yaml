@@ -1,0 +1,9 @@
+# Governance record of gpt-4.1-mini, from intake request #15. Owned by model risk (CODEOWNERS): changed
+# only by a reviewed pull request. The requester can't approve it (check separation-of-duties).
+tier: 3
+tier_record: AICOE-TEST-001
+aiia: AIIA-0193
+affects_people: false
+sponsor: Retail banking
+intake_issue: 15
+requested_by: anooppc07

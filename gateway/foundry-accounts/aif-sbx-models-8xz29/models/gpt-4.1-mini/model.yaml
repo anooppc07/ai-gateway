@@ -1,0 +1,21 @@
+# Onboarded from intake issue #15. Owned by the AI platform (CODEOWNERS); the governance record is
+# governance.yaml, owned by model risk.
+name: gpt-4.1-mini
+api: openai
+status: active
+purpose: serving
+profile: general-purpose
+owner: anooppc07
+model:
+  format: OpenAI
+  name: gpt-4.1-mini
+  version: '2025-04-14'
+deployment:
+  name: gpt-4.1-mini
+  sku: GlobalStandard
+  capacity: 10
+  version_upgrade: NoAutoUpgrade
+  existing: false
+guardrail: Microsoft.DefaultV2
+docs_file: docs.md
+tests_file: tests.yaml
