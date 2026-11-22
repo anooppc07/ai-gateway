@@ -101,7 +101,7 @@ jobs:
           git checkout -b "$branch"
           git add "$folder"
           git commit -m "Onboard model $model (intake #$ISSUE_NUMBER, tier $tier)" -m "Requested by @$REQUESTER, intake approved by @$APPROVER."
-          git push -u origin "$branch"
+          git push --force -u origin "$branch"   # re-runnable: the intake branch is only ever written by this workflow
           {
             echo "Onboards **\`$model\`** from intake #$ISSUE_NUMBER (tier $tier, $(jq -r .fields.profile result.json))."
             echo
@@ -109,7 +109,12 @@ jobs:
             echo "- Governance fields in \`model.yaml\` come from the request: tier, AICOE tier record, AIIA, affects people, sponsor."
             echo "- Version pinned (\`NoAutoUpgrade\`). Merging deploys and registers the model; no project can use it until it's evaluated, validated by MRM and approved."
           } > pr.md
-          url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md)
+          url=$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')
+          if [ -z "$url" ]; then
+            url=$(gh pr create --base main --head "$branch" --title "Onboard model $model (intake #$ISSUE_NUMBER)" --body-file pr.md) || {
+              echo "::error::Couldn't open the pull request. If the error says GitHub Actions isn't permitted to create pull requests: Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests, then re-run."
+              exit 1; }
+          fi
           gh label create onboarding:in-progress --force --color 1d76db --description "Model pull request opened. Next: evaluation, MRM validation and approval" >/dev/null
           gh issue edit "$ISSUE_NUMBER" --remove-label intake:ready-for-review --add-label onboarding:in-progress
           gh workflow run ci.yml --ref "$branch"
