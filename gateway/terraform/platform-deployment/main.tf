@@ -52,14 +52,14 @@ resource "terraform_data" "model_definitions" {
       )])
       error_message = "A retiring or retired model needs lifecycle.retirement.date (YYYY-MM-DD) and a replacement that is validated, replaces it, and was evaluated against its current version (evaluation.baseline_version): ${join("; ", [for n, m in local.models : "${n} -> ${try(m.governance.lifecycle.retirement.replacement, "?")}" if contains(["retiring", "retired"], m.governance.lifecycle.state)])}."
     }
-    # A notice is for a future date; a model is retired only on or after its date (an earlier retirement first
-    # brings the date forward in a reviewed pull request).
+    # A model is retired only on or after its date (an earlier retirement first brings the date forward in a
+    # reviewed pull request). A notice's future date is checked when it's given (retirement.py), not here: once the
+    # date passes, deploys must keep working until the retirement pull request is merged.
     precondition {
       condition = alltrue([for n, m in local.models : (
-        m.governance.lifecycle.state == "retiring" ? timecmp("${try(m.governance.lifecycle.retirement.date, "1970-01-01")}T00:00:00Z", plantimestamp()) > 0 :
-        m.governance.lifecycle.state == "retired" ? timecmp("${try(m.governance.lifecycle.retirement.date, "2999-01-01")}T00:00:00Z", plantimestamp()) <= 0 : true
+        m.governance.lifecycle.state != "retired" || timecmp("${try(m.governance.lifecycle.retirement.date, "2999-01-01")}T00:00:00Z", plantimestamp()) <= 0
       )])
-      error_message = "A retiring model's retirement date must be in the future; a retired model's date must have come."
+      error_message = "A model can be retired only on or after its retirement date."
     }
     precondition {
       condition     = alltrue([for n, m in local.models : !m.governance_inline])
