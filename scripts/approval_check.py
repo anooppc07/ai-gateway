@@ -7,7 +7,8 @@ code owners who is neither
 
   - the requester of the intake request (branch intake/<issue>-<model>: the author of issue <issue>),
   - the pull request author, nor
-  - anyone who authored a commit in it.
+  - anyone who authored a commit in it (a merge commit that only brings in the base branch doesn't count: it
+    changes none of the pull request's own files).
 
 Approvals given on an older commit don't count: a change after approval needs approval again.
 
@@ -98,9 +99,18 @@ def main():
     if m:
         requester = api(f"repos/{REPO}/issues/{m.group(1)}")["user"]["login"]
         excluded.add(requester.lower())
+    pr_files = {f["filename"] for f in api(f"repos/{REPO}/pulls/{n}/files")}
     for c in api(f"repos/{REPO}/pulls/{n}/commits"):
-        if c.get("author") and c["author"].get("type") != "Bot":
-            excluded.add(c["author"]["login"].lower())
+        if not c.get("author") or c["author"].get("type") == "Bot":
+            continue
+        if len(c.get("parents") or []) > 1:
+            # A merge commit ("Update branch") brings in the base branch. It makes its author a committer of the
+            # change only if it touches the pull request's own files (a conflict resolution does); otherwise a
+            # reviewer who updates the branch would disqualify themselves.
+            touched = {f["filename"] for f in (api(f"repos/{REPO}/commits/{c['sha']}").get("files") or [])}
+            if not touched & pr_files:
+                continue
+        excluded.add(c["author"]["login"].lower())
 
     # Latest decision of each reviewer; only an approval on the current commit counts.
     latest = {}
