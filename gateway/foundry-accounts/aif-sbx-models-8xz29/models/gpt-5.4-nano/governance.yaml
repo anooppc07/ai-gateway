@@ -16,6 +16,7 @@ lifecycle:
     dataset_sha: a0fa859adbb2
     queries: 15
     judge: gpt-5.1
+    baseline_version: '2026-03-17'   # backfilled: gpt-5.4-mini's version since onboarding (git history); recorded by validations from now on
     run: https://github.com/anooppc07/ai-gateway/actions/runs/45110700524
     record: dev/evaluations/gpt-5.4-nano/20261123T041831Z-run45110700524.json
     at: '2026-11-23T04:18:31+00:00'
