@@ -1,6 +1,7 @@
 # Phase 1, step 1: the front door for onboarding a model (deck slide 4). A workflow (model-intake.yml) checks the
-# request, labels it, and, after a second person approves it (label intake:approved, not the requester), opens the
-# pull request that adds the model to gateway/foundry-accounts/. Nothing reaches Azure until that pull request is merged.
+# request and opens the pull request that adds the model to gateway/foundry-accounts/ (and, when the request names the
+# model it replaces, its evaluation pack). Reviewing that pull request is the approval. Nothing reaches Azure until
+# it is merged.
 name: Model onboarding request
 description: Ask the platform to onboard a model (vendor or catalogue model). Captures ownership, use, risk tier and AIIA.
 title: "Onboard model: <model name>"
@@ -9,8 +10,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Fill in every field. The platform checks the request automatically; a second person (not you) approves it,
-        then a pull request adds the model. Evaluations, MRM validation and approval follow before any project can use it.
+        Fill in every field. The platform checks the request and opens a pull request; model risk and the AI platform
+        approve it (not you). If the model replaces one in use, name it: the model is then evaluated against it as soon
+        as it is deployed, and model risk validates the result before any project can use it.
   - type: input
     id: model_name
     attributes:
@@ -46,6 +48,17 @@ body:
         - embedding
     validations:
       required: true
+  - type: input
+    id: replaces
+    attributes:
+      label: Replaces model (optional)
+      description: >-
+        The model in use that this one would replace (for example gpt-5.4-mini). The pull request then includes the
+        evaluation pack for its model type, and the platform evaluation runs as soon as the model is deployed. Leave
+        empty for a new capability (no model to compare with): its evaluation pack is written by the platform team.
+      placeholder: gpt-5.4-mini
+    validations:
+      required: false
   - type: input
     id: capacity
     attributes:

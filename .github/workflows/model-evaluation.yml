@@ -12,6 +12,9 @@
 #                it; its approval is the validation. The person who started the run is the commit's author, so their
 #                approval doesn't count (check separation-of-duties).
 #
+# Started by hand, or by itself after the deploy that onboards a model with a pack (the intake writes the pack when the
+# request names the model it replaces; model risk approves it in the onboarding pull request).
+#
 # After the merge, the deployment writes the decision record and the registry shows the model as validated; each
 # project repository finds out from the registry (it opens its own adoption issues).
 name: model-evaluation
@@ -22,6 +25,13 @@ on:
       candidate:
         description: "Candidate model: the pack gateway/model-evals/<candidate>.yaml"
         required: true
+  # By itself: after a deploy on main that onboarded a model with an evaluation pack (written by the intake when the
+  # request names the model it replaces). Only models that deploy added: a failed candidate isn't re-run on every
+  # later deploy (re-run it by hand).
+  workflow_run:
+    workflows: [model-platform-deployment]
+    types: [completed]
+    branches: [main]
 
 permissions:
   id-token: write
@@ -30,7 +40,7 @@ permissions:
   actions: write         # start ci and the plan on that branch
 
 concurrency:
-  group: model-evaluation-${{ inputs.candidate }}
+  group: model-evaluation-${{ inputs.candidate || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 defaults:
@@ -38,11 +48,57 @@ defaults:
     shell: bash   # -eo pipefail
 
 jobs:
+  select:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      candidates: ${{ steps.pick.outputs.candidates }}
+      ref: ${{ steps.pick.outputs.ref }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+      - name: The models to evaluate, and who asked for each
+        id: pick
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # By hand: the person who starts it is the one whose approval of the validation won't count.
+            jq -cn --arg c "$CANDIDATE" --arg r "${{ github.actor }}" --arg i "${{ github.actor_id }}" \
+              '[{candidate: $c, requester: $r, requester_id: $i}]' > c.json
+          else
+            # After a deploy: the models whose governance.yaml this commit added, onboarded, with a pack. The intake
+            # requester is the one who asked (in the test bed the approver often merges, so the merger can't be).
+            echo '[]' > c.json
+            for f in $(git diff --name-only --diff-filter=A HEAD^1 HEAD -- 'gateway/foundry-accounts/*/models/*/governance.yaml'); do
+              m=$(basename "$(dirname "$f")")
+              [ -f "gateway/model-evals/$m.yaml" ] || { echo "$m: no evaluation pack, not evaluated"; continue; }
+              state=$(python3 -c "import yaml,sys;print((yaml.safe_load(open(sys.argv[1])) or {}).get('lifecycle',{}).get('state',''))" "$f")
+              [ "$state" = onboarded ] || continue
+              who=$(python3 -c "import yaml,sys;print((yaml.safe_load(open(sys.argv[1])) or {}).get('requested_by') or '')" "$f")
+              id=$( [ -n "$who" ] && gh api "users/$who" --jq .id || echo 0)
+              jq -c --arg c "$m" --arg r "${who:-model-evaluation}" --arg i "$id" '. + [{candidate: $c, requester: $r, requester_id: $i}]' c.json > c2.json && mv c2.json c.json
+            done
+          fi
+          echo "candidates=$(cat c.json)" >> "$GITHUB_OUTPUT"
+          echo "Candidates: $(cat c.json)" >> "$GITHUB_STEP_SUMMARY"
+
   evaluate:
+    needs: select
+    if: needs.select.outputs.candidates != '[]' && needs.select.outputs.candidates != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.select.outputs.candidates) }}
     runs-on: ubuntu-latest
     environment: model-dev
     env:
-      PACK: gateway/model-evals/${{ inputs.candidate }}.yaml
+      PACK: gateway/model-evals/${{ matrix.candidate }}.yaml
       EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL || 'gpt-5.1' }}
       RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
       RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}
@@ -50,6 +106,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.ref }}
       - uses: ./.github/actions/setup
         with:
           azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -65,7 +123,7 @@ jobs:
       - name: Keep the evaluation record as evidence (immutable store)
         id: record
         run: |
-          blob="dev/evaluations/${{ inputs.candidate }}/$(date -u +%Y%m%dT%H%M%SZ)-run${{ github.run_id }}.json"
+          blob="dev/evaluations/${{ matrix.candidate }}/$(date -u +%Y%m%dT%H%M%SZ)-run${{ github.run_id }}.json"
           mkdir -p "$RUNNER_TEMP/evidence"
           cp "$RUNNER_TEMP/evaluation.json" "$RUNNER_TEMP/evidence/${blob//\//__}"
           python scripts/record.py upload "$RUNNER_TEMP/evidence"
@@ -78,14 +136,15 @@ jobs:
           exit 1
       - name: Propose validation (pull request for model risk)
         run: |
-          model=${{ inputs.candidate }}
+          model=${{ matrix.candidate }}
           branch="validate/$model-run${{ github.run_id }}"
           python scripts/model_eval.py propose "$PACK" "$RUNNER_TEMP/evaluation.json" "${{ steps.record.outputs.blob }}" > pr.md
           git config user.name "model-evaluation"; git config user.email "model-evaluation@users.noreply.github.com"
           git checkout -b "$branch"
           git add gateway/foundry-accounts
-          # The person who started the evaluation is the author: separation-of-duties won't count their approval.
-          git commit -q --author "${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>" \
+          # The person who asked for the evaluation (who started it, or the intake requester) is the author:
+          # separation-of-duties won't count their approval.
+          git commit -q --author "${{ matrix.requester }} <${{ matrix.requester_id }}+${{ matrix.requester }}@users.noreply.github.com>" \
             -m "Validate model $model (evaluation run ${{ github.run_id }})" -m "Evidence: records/${{ steps.record.outputs.blob }}"
           git push -q -u origin "$branch"
           url=$(gh pr create --base main --head "$branch" --title "Validate model $model: platform evaluation passed" --body-file pr.md)

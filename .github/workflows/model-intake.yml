@@ -79,6 +79,8 @@ jobs:
           # Render from main (the check refuses a model folder that already exists), then put it on the branch.
           out=$(python scripts/intake.py render "$RUNNER_TEMP/render")
           folder="gateway/foundry-accounts/${out#"$RUNNER_TEMP/render/"}"
+          python scripts/intake.py pack "$RUNNER_TEMP/pack.yaml"   # only when the request names the model it replaces
+          packfile="gateway/model-evals/$model.yaml"
           python scripts/intake.py summary > pr.md
           git config user.name "model-intake"; git config user.email "model-intake@users.noreply.github.com"
           # Each version of the request is a new commit on top of the last one, never a rewrite, so reviewers see
@@ -92,6 +94,10 @@ jobs:
           fi
           rm -rf "$folder"; mkdir -p "$folder"; cp -r "$out"/. "$folder"/
           git add -A "$folder"
+          # The evaluation pack (model risk approves its criteria in this pull request); gone if the request no
+          # longer names a model it replaces.
+          if [ -f "$RUNNER_TEMP/pack.yaml" ]; then cp "$RUNNER_TEMP/pack.yaml" "$packfile"; git add "$packfile";
+          elif [ -f "$packfile" ]; then git rm -q "$packfile"; fi
           changed=""
           if git diff --cached --quiet; then
             echo "The request changed nothing in the model folder."
@@ -99,7 +105,7 @@ jobs:
             git commit -q -m "Onboard model $model (intake #$ISSUE_NUMBER, tier $tier)" -m "Requested by @$REQUESTER."
           else
             # What changed, field by field, for the approvers (comment lines and file headers left out).
-            changed=$(git diff --cached -U0 -- "$folder" | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*#' || true)
+            changed=$(git diff --cached -U0 -- "$folder" "$packfile" | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*#' || true)
             git commit -q -m "Request #$ISSUE_NUMBER changed" -m "Edited by @${{ github.event.sender.login }}."
           fi
           git push -q -u origin "$branch"
