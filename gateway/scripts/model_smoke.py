@@ -83,7 +83,10 @@ def smoke_models(env):
         be_state = "registered" if be.status_code == 200 else f"HTTP {be.status_code}"
         ks = values.get(m["kill_switch"], "missing")
         rows.append(f"| {name} | {m['account']} ({m['region']}) | {dep_state} | {be_state} | {ks} |")
-        if dep_state != "Succeeded" or be_state != "registered" or ks not in ("active", "suspended"):
+        # A retired model must be held at "retired" (else the gateway would still serve it); any other model is
+        # active or suspended by operations.
+        ks_ok = ks == "retired" if m.get("lifecycle") == "retired" else ks in ("active", "suspended")
+        if dep_state != "Succeeded" or be_state != "registered" or not ks_ok:
             failed.append(name)
     summary("\n".join(rows))
     if failed:
