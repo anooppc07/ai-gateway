@@ -7,10 +7,11 @@ the pull request that asks model risk to validate it.
                                              with replaces: <baseline> and the evaluation evidence (record blob
                                              <blob> in the immutable store); prints the pull request description
 
-run: in the platform evaluation Foundry project (GitHub variables EVAL_PROJECT_ENDPOINT, EVAL_CONNECTION). The target
-is the model itself (Foundry azure_ai_model target) through the project's gateway connection, <connection>/<model>,
-so calls go through the AI gateway like any project's. Both models answer the same queries; the same judge scores
-both. The verdict is a coverage check, then four checks, all required:
+run: in the platform evaluation Foundry project "platform-eval" of the hosting account (created by the platform
+stack; independent of any use-case project). The target is each model's deployment itself (Foundry azure_ai_model
+target), so the evaluation measures the model, not the gateway path: gateway limits and content safety are part of
+each project's own agent evaluation. Candidate, baseline and judge must be in the same hosting account. Both models
+answer the same queries; the same judge scores both. The verdict is a coverage check, then four checks, all required:
   floors         candidate pass rate per evaluator >= its floor
   hard stops     listed evaluators pass every item
   no regression  candidate pass rate >= baseline pass rate - margin (non-inferiority), per evaluator
@@ -53,6 +54,19 @@ def model_folder(name):
     return found[0]
 
 
+def model_yaml(name):
+    with open(os.path.join(model_folder(name), "model.yaml"), encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def account_of(name):
+    return os.path.basename(os.path.dirname(os.path.dirname(model_folder(name))))
+
+
+def deployment(name):
+    return model_yaml(name)["deployment"]["name"]
+
+
 def governance(name):
     with open(os.path.join(model_folder(name), "governance.yaml"), encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
@@ -78,16 +92,16 @@ def load_pack(path):
     return pack
 
 
-def criteria(pack, connection):
+def criteria(pack):
     return [{"type": "azure_ai_evaluator", "name": e, "evaluator_name": f"builtin.{e}",
-             "initialization_parameters": {"deployment_name": f"{connection}/{pack['judge']}"},
+             "initialization_parameters": {"deployment_name": deployment(pack["judge"])},
              "data_mapping": {"query": "{{item.query}}", "response": "{{sample.output_text}}"}}
             for e in pack["evaluators"]]
 
 
-def evaluation(oai, pack, connection):
+def evaluation(oai, pack):
     """One Foundry evaluation per candidate, pack version and judge, so baseline and candidate runs sit side by side."""
-    tc = criteria(pack, connection)
+    tc = criteria(pack)
     key = hashlib.sha256(json.dumps([tc, ITEM_SCHEMA, "model-target"], sort_keys=True).encode()).hexdigest()[:12]
     for e in oai.evals.list(limit=100):
         if (e.metadata or {}).get("model_eval_key") == key:
@@ -100,7 +114,7 @@ def evaluation(oai, pack, connection):
         testing_criteria=tc)
 
 
-def run_model(oai, definition, pack, connection, model, role):
+def run_model(oai, definition, pack, model, role):
     run = oai.evals.runs.create(
         eval_id=definition.id, name=f"{role} {model}",
         metadata={"model": model, "role": role, "pack_version": str(pack["pack_version"]),
@@ -110,8 +124,8 @@ def run_model(oai, definition, pack, connection, model, role):
                      "source": {"type": "file_content", "content": [{"item": {"query": d["query"]}} for d in pack["dataset"]]},
                      "input_messages": {"type": "template", "template": [{
                          "type": "message", "role": "user", "content": {"type": "input_text", "text": "{{item.query}}"}}]},
-                     "target": {"type": "azure_ai_model", "model": f"{connection}/{model}"}})
-    print(f"{role} {model}: evaluation running ({len(pack['dataset'])} queries, target {connection}/{model})")
+                     "target": {"type": "azure_ai_model", "model": deployment(model)}})
+    print(f"{role} {model}: evaluation running ({len(pack['dataset'])} queries, deployment {deployment(model)})")
     return run
 
 
@@ -230,18 +244,19 @@ def run(path, out):
     state = ((governance(pack["candidate"]).get("lifecycle") or {}).get("state"))
     if state not in EVALUABLE:
         sys.exit(f"{pack['candidate']} is '{state}': only an onboarded model is evaluated for validation.")
-    governance(pack["baseline"])   # the baseline must be onboarded too
-    endpoint, connection = os.environ.get("EVAL_PROJECT_ENDPOINT"), os.environ.get("EVAL_CONNECTION")
-    if not endpoint or not connection:
-        sys.exit("GitHub variables EVAL_PROJECT_ENDPOINT and EVAL_CONNECTION (environment model-dev) name the platform "
-                 "evaluation project and its gateway connection.")
+    accounts = {m: account_of(m) for m in (pack["candidate"], pack["baseline"], pack["judge"])}
+    if len(set(accounts.values())) != 1:
+        sys.exit(f"Candidate, baseline and judge must be in one hosting account: {accounts}")
+    account = accounts[pack["candidate"]]
+    endpoint = os.environ.get("EVAL_PROJECT_ENDPOINT") or f"https://{account}.services.ai.azure.com/api/projects/platform-eval"
+    print(f"platform evaluation project: {endpoint}")
     oai = AIProjectClient(endpoint=endpoint, credential=AzureCliCredential(process_timeout=60)).get_openai_client()
 
-    definition = evaluation(oai, pack, connection)
+    definition = evaluation(oai, pack)
     # One run at a time: both share the judge's token limit, and a throttled judge call leaves an item unscored.
     done = {}
     for role, model in (("baseline", pack["baseline"]), ("candidate", pack["candidate"])):
-        done[role] = wait(oai, definition, run_model(oai, definition, pack, connection, model, role))
+        done[role] = wait(oai, definition, run_model(oai, definition, pack, model, role))
     scores = {role: rates(r) for role, r in done.items()}
     reports = {role: getattr(r, "report_url", None) for role, r in done.items()}
 
@@ -287,7 +302,7 @@ def run(path, out):
               "pack": pack["path"], "pack_version": pack["pack_version"], "dataset_sha": pack["dataset_sha"],
               "queries": expected, "judge": pack["judge"], "margin": margin, "min_coverage": pack.get("min_coverage", 1.0),
               "verdict": "pass" if verdict else "fail", "scores": scores, "budget": perf, "budget_ok": budget_ok,
-              "unscored_reasons": why, "foundry": {"eval_id": definition.id, "reports": reports,
+              "unscored_reasons": why, "foundry": {"project": endpoint, "eval_id": definition.id, "reports": reports,
                                                     "runs": {role: r.id for role, r in done.items()}},
               "requested_by": os.environ.get("GITHUB_ACTOR"), "commit": os.environ.get("GITHUB_SHA", "local"),
               "run": os.environ.get("RUN_URL"),

@@ -24,6 +24,8 @@ mock_provider "azurerm" {
   }
 }
 
+mock_provider "azapi" {}
+
 run "registers_each_model" {
   command = plan
 
@@ -43,6 +45,10 @@ run "registers_each_model" {
   assert {
     condition     = jsondecode(azurerm_api_management_named_value.registry["gpt-5-mini"].value).capacity_tpm == 50000
     error_message = "Registry capacity should be deployment capacity x 1000 TPM."
+  }
+  assert {
+    condition     = azapi_resource.eval_project["aif-sbx-models-8xz29"].name == "platform-eval"
+    error_message = "Each hosting account gets the platform evaluation project."
   }
   assert {
     condition     = jsondecode(azurerm_api_management_named_value.registry["gpt-5-mini"].value).lifecycle == "validated"

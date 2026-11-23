@@ -192,11 +192,14 @@ The merged pull requests are the Git-side history. Records aren't kept in Git: t
 A new model is validated against the model it would replace before any project is told about it.
 
 1. **Evaluate**: Actions → `model-evaluation` → the candidate. The pack is `gateway/model-evals/<candidate>.yaml`
-   (candidate, baseline, evaluators with floors, margin, min_coverage, budget, dataset). It runs in the platform
-   evaluation Foundry project, with **the model itself as the target** (no agents), through the gateway connection
-   (`<connection>/<model>`). The same judge scores both. The verdict: coverage, floors, hard stops, no regression within
-   the margin, budget (p95 latency, tokens and cost per answer, from the Foundry run). Only an `onboarded` model is
-   evaluated.
+   (candidate, baseline, evaluators with floors, margin, min_coverage, budget, dataset). It runs in the **platform
+   evaluation project** `platform-eval`, which the platform stack creates in each hosting account: the platform
+   team's own Foundry project, independent of any use case. It reaches every deployment in the account directly, so
+   nothing is set up per model. The target is each model's deployment itself: the evaluation measures the model,
+   not the gateway path (gateway limits and content safety are part of each project's own agent evaluation). The
+   same judge scores both; candidate, baseline and judge are in the same account. The verdict: coverage, floors,
+   hard stops, no regression within the margin, budget (p95 latency, tokens and cost per answer, from the Foundry
+   run). Only an `onboarded` model is evaluated.
 2. **Evidence**: every run's result, pass or fail, goes to the immutable records store:
    `<env>/evaluations/<model>/<time>-run<id>.json`.
 3. **Validate** (model risk): on a pass, the workflow opens a pull request that sets the candidate's `governance.yaml`
@@ -206,9 +209,10 @@ A new model is validated against the model it would replace before any project i
 4. **Merge**: the deployment writes the decision record, and the registry shows `lifecycle: validated` and `replaces`.
    Project repositories read the registry and open their own adoption issues; the platform doesn't write into them.
 
-Variables of environment `model-dev`: `EVAL_PROJECT_ENDPOINT` (the platform evaluation project), `EVAL_CONNECTION`
-(its gateway connection). Repository variable `EVAL_JUDGE_MODEL` (default `gpt-5.1`), unless the pack sets
-`judge_model`.
+**Once per hosting account**, after the platform stack has created `platform-eval`: grant its managed identity
+**Cognitive Services OpenAI User** on the account, so its evaluations can call the deployments (the pipeline identity
+can't assign roles). The principal ID is the stack's output `eval_projects`. Repository variable `EVAL_JUDGE_MODEL`
+(default `gpt-5.1`) names the judge, unless the pack sets `judge_model`.
 
 ## Two repositories
 
