@@ -5,6 +5,8 @@ the pull request that the approvers review. The pull request review is the appro
   intake.py render <out_dir>      reads ISSUE_BODY, ISSUE_NUMBER, REQUESTER; writes model.yaml and docs.md, tests.yaml
                                   (AI platform owns them) and governance.yaml (model risk owns it) into
                                   <out_dir>/<hosting account>/models/<model>/ and prints that folder
+  intake.py pack <out_file>       reads ISSUE_BODY, ISSUE_NUMBER; when the request names the model it replaces, writes
+                                  the evaluation pack from the template of the model type (else prints why not)
   intake.py summary               reads ISSUE_BODY, ISSUE_NUMBER, REQUESTER; prints the pull request description: a
                                   plain-language summary for approvers who don't read YAML
 
@@ -27,7 +29,10 @@ LABELS = {  # issue form label -> field
     "Business use case": "use_case", "Intended use and limitations": "intended_use", "Risk tier": "tier",
     "AICOE tier record ID": "tier_record", "AI Impact Assessment (AIIA) reference": "aiia",
     "Does the use case affect people (decisions about individuals)?": "affects_people",
+    "Replaces model (optional)": "replaces",
 }
+OPTIONAL = {"replaces"}
+TEMPLATES = os.path.join(ROOT, "gateway", "model-evals", "templates")
 PROFILES = {"general-purpose": "openai", "reasoning": "openai", "embedding": "embeddings"}   # profile -> gateway api
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,62}$")
 VERSION_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}|\d+(\.\d+)*)$")
@@ -64,7 +69,7 @@ def hosting_account(environment="dev"):
 def check(fields):
     errors, refused = [], False
     for label, key in LABELS.items():
-        if not fields.get(key):
+        if key not in OPTIONAL and not fields.get(key):
             errors.append(f"**{label}** is empty.")
     name = fields.get("model_name", "").lower()
     if name and not NAME_RE.match(name):
@@ -84,6 +89,16 @@ def check(fields):
     owner = fields.get("owner", "").lstrip("@")
     if owner and not re.match(r"^[A-Za-z0-9-]{1,39}$", owner):
         errors.append(f"**Model owner** `{fields['owner']}`: a GitHub user name.")
+    rep = fields.get("replaces", "").lower()
+    if rep:
+        gov_file = glob.glob(os.path.join(ACCOUNTS, "*", "models", rep, "governance.yaml"))
+        if not gov_file:
+            errors.append(f"**Replaces model** `{rep}` isn't a model on the platform.")
+        else:
+            with open(gov_file[0], encoding="utf-8") as fh:
+                state = ((yaml.safe_load(fh) or {}).get("lifecycle") or {}).get("state")
+            if state not in ("validated", "retiring"):
+                errors.append(f"**Replaces model** `{rep}` is '{state}': only a model in use (validated) can be replaced.")
     account = hosting_account()
     if not account:
         errors.append("No single hosting account for the dev stage was found (platform setup).")
@@ -152,6 +167,31 @@ def render(fields, issue, out_dir, requester):
     return folder
 
 
+def pack(fields, issue, out_file):
+    """The evaluation pack from the template of the model type, when the request names the model it replaces. Writes
+    nothing (and prints why) when there's no model to compare with or no template for the type yet."""
+    r = check(fields)
+    rep = fields.get("replaces", "").lower()
+    if not rep:
+        print("no pack: the request names no model it replaces")
+        return
+    tmpl = os.path.join(TEMPLATES, f"{fields['profile']}.yaml")
+    if not os.path.exists(tmpl):
+        print(f"no pack: no evaluation template for model type {fields['profile']} yet")
+        return
+    with open(tmpl, encoding="utf-8") as fh:
+        text = fh.read()
+    lines = text.splitlines(keepends=True)
+    while lines and lines[0].startswith("#"):   # the template's own header
+        lines.pop(0)
+    body = "".join(lines).replace("{candidate}", r["model"]).replace("{baseline}", rep)
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(f"# Platform evaluation pack: {r['model']} against {rep}, the model it would replace. Written from the\n"
+                 f"# {fields['profile']} template by intake #{issue}; model risk approves it in the onboarding pull request.\n"
+                 "# A change to it is a new pack version (bump pack_version), approved by model risk.\n" + body)
+    print(out_file)
+
+
 def summary(fields, issue, requester):
     """Pull request description: what the approvers decide, in plain language, before any file."""
     r = check(fields)
@@ -174,6 +214,8 @@ Onboarding model **{r['model']}** (version {fields['model_version']}, {fields['p
 
 {fields['intended_use'].strip()}
 
+**How it will be evaluated:** {evaluation_line(fields, r)}
+
 **What merging does:** deploys the model in dev and registers it in the gateway. No project can use it until it has been
 evaluated and approved for that project.
 
@@ -181,7 +223,7 @@ evaluated and approved for that project.
 
 | Role | Reviews | File |
 |---|---|---|
-| Model risk | Tier, AICOE record, AIIA, people impact | `governance.yaml` |
+| Model risk | Tier, AICOE record, AIIA, people impact; the evaluation criteria | `governance.yaml`, `gateway/model-evals/{r['model']}.yaml` |
 | AI platform | Capacity, version, deployment | `model.yaml`, `docs.md`, `tests.yaml` |
 
 GitHub asks both (CODEOWNERS). The requester (@{requester}) can't approve: the check **separation-of-duties** ignores
@@ -198,16 +240,31 @@ Don't edit the files here: changes come from the request, so the record stays in
 """
 
 
+def evaluation_line(fields, r):
+    rep = fields.get("replaces", "").lower()
+    if not rep:
+        return ("no model to compare with (a new capability): the platform team writes its evaluation pack before "
+                "it is evaluated.")
+    if not os.path.exists(os.path.join(TEMPLATES, f"{fields['profile']}.yaml")):
+        return (f"against **{rep}**, but there's no evaluation template for {fields['profile']} models yet: the "
+                "platform team writes its pack.")
+    return (f"against **{rep}**, the model it would replace, with the {fields['profile']} pack in "
+            f"`gateway/model-evals/{r['model']}.yaml` (in this pull request: approving it approves the criteria). "
+            "The evaluation starts by itself once the model is deployed; a pass opens the validation pull request.")
+
+
 def one_line(text):
     return " ".join((text or "").split()).replace("|", "\\|")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "render", "summary"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("check", "render", "summary", "pack"):
         sys.exit(__doc__)
     f = parse(os.environ.get("ISSUE_BODY", ""))
     if sys.argv[1] == "check":
         print(json.dumps(check(f)))
+    elif sys.argv[1] == "pack":
+        pack(f, os.environ["ISSUE_NUMBER"], sys.argv[2])
     elif sys.argv[1] == "render":
         print(render(f, os.environ["ISSUE_NUMBER"], sys.argv[2], os.environ["REQUESTER"]))
     else:

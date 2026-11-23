@@ -191,7 +191,7 @@ The merged pull requests are the Git-side history. Records aren't kept in Git: t
 
 A new model is validated against the model it would replace before any project is told about it.
 
-1. **Evaluate**: Actions → `model-evaluation` → the candidate. The pack is `gateway/model-evals/<candidate>.yaml`
+1. **Evaluate**: by itself after the deploy that onboards a model with a pack, or by hand (Actions → `model-evaluation` → the candidate). When the intake request names the model it replaces (*Replaces model*), the intake writes the pack from the template of the model type (`gateway/model-evals/templates/<type>.yaml`) into the onboarding pull request, where model risk approves the criteria; the intake requester then counts as the one who asked for the evaluation. The pack is `gateway/model-evals/<candidate>.yaml`
    (candidate, baseline, evaluators with floors, margin, min_coverage, budget, dataset). It runs in the **platform
    evaluation project** `platform-eval`, which the platform stack creates in each hosting account: the platform
    team's own Foundry project, independent of any use case. It reaches every deployment in the account directly, so
@@ -387,7 +387,7 @@ See [Shared policy](#shared-policy-policy-fragments), [Kill switches](#kill-swit
 | `.github/actions/` | shared steps: `setup` (Python, Terraform, Azure sign-in), `tf-init` (state backend) |
 | `scripts/intake.py`, `scripts/approval_check.py`, `scripts/record.py`, `scripts/model_eval.py` | model intake (request check, model folder, pull request summary); the separation-of-duties check; decision records; platform evaluation |
 | `.github/CODEOWNERS` | who must approve which files |
-| `gateway/model-evals/<candidate>.yaml` | platform evaluation packs |
+| `gateway/model-evals/<candidate>.yaml`, `templates/<type>.yaml` | platform evaluation packs, and the templates the intake writes them from (model risk) |
 | `scripts/release_plan.py` | which stages run and whether each pipeline has a change (their `plan` job) |
 | `scripts/set_github_environment.sh`, `gateway/scripts/platform_env.py` | setting an environment's GitHub variables; reading them |
 
