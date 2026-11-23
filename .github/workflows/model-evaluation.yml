@@ -43,7 +43,6 @@ jobs:
     environment: model-dev
     env:
       PACK: gateway/model-evals/${{ inputs.candidate }}.yaml
-      EVAL_PROJECT_ENDPOINT: ${{ vars.EVAL_PROJECT_ENDPOINT }}   # optional override; default the hosting account's platform-eval
       EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL || 'gpt-5.1' }}
       RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
       RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}
