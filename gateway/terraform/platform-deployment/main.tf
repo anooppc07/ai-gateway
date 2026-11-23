@@ -36,8 +36,30 @@ resource "terraform_data" "model_definitions" {
     }
     # Lifecycle state, in governance.yaml: each change is a merged, reviewed pull request; the registry shows it.
     precondition {
-      condition     = alltrue([for n, m in local.models : contains(["onboarded", "evaluated", "validated", "retired"], try(m.governance.lifecycle.state, ""))])
-      error_message = "governance.yaml lifecycle.state is required: onboarded, evaluated, validated or retired."
+      condition     = alltrue([for n, m in local.models : contains(["onboarded", "evaluated", "validated", "retiring", "retired"], try(m.governance.lifecycle.state, ""))])
+      error_message = "governance.yaml lifecycle.state is required: onboarded, evaluated, validated, retiring or retired."
+    }
+    # Retirement: a notice goes out only with an approved alternative. The replacement must be validated, as the
+    # replacement of this model, by a platform evaluation run against the version of this model deployed now.
+    precondition {
+      condition = alltrue([for n, m in local.models : (
+        !contains(["retiring", "retired"], m.governance.lifecycle.state) || (
+          can(regex("^\\d{4}-\\d{2}-\\d{2}$", try(m.governance.lifecycle.retirement.date, ""))) &&
+          try(local.models[m.governance.lifecycle.retirement.replacement].governance.lifecycle.state, "") == "validated" &&
+          try(local.models[m.governance.lifecycle.retirement.replacement].governance.lifecycle.replaces, "") == n &&
+          try(local.models[m.governance.lifecycle.retirement.replacement].governance.lifecycle.evaluation.baseline_version, "") == m.model.version
+        )
+      )])
+      error_message = "A retiring or retired model needs lifecycle.retirement.date (YYYY-MM-DD) and a replacement that is validated, replaces it, and was evaluated against its current version (evaluation.baseline_version): ${join("; ", [for n, m in local.models : "${n} -> ${try(m.governance.lifecycle.retirement.replacement, "?")}" if contains(["retiring", "retired"], m.governance.lifecycle.state)])}."
+    }
+    # A notice is for a future date; a model is retired only on or after its date (an earlier retirement first
+    # brings the date forward in a reviewed pull request).
+    precondition {
+      condition = alltrue([for n, m in local.models : (
+        m.governance.lifecycle.state == "retiring" ? timecmp("${try(m.governance.lifecycle.retirement.date, "1970-01-01")}T00:00:00Z", plantimestamp()) > 0 :
+        m.governance.lifecycle.state == "retired" ? timecmp("${try(m.governance.lifecycle.retirement.date, "2999-01-01")}T00:00:00Z", plantimestamp()) <= 0 : true
+      )])
+      error_message = "A retiring model's retirement date must be in the future; a retired model's date must have come."
     }
     precondition {
       condition     = alltrue([for n, m in local.models : !m.governance_inline])
@@ -194,6 +216,21 @@ resource "azapi_resource" "eval_project" {
     properties = {
       displayName = "Platform model evaluation"
       description = "AI platform team: candidate models against the models they would replace. Not for use cases."
+    }
+  }
+}
+
+# A retired model is blocked at the gateway for every project: its kill switch is held at "retired" (the route
+# fragment answers 410 with the replacement's name in the registry). Unlike an operator's suspension, this comes
+# from Git: an apply sets it again, so a retired model is reactivated only by un-retiring it in a pull request.
+resource "azapi_update_resource" "retired" {
+  for_each = { for n, m in local.models : n => m if m.governance.lifecycle.state == "retired" }
+
+  type        = "Microsoft.ApiManagement/service/namedValues@2024-05-01"
+  resource_id = azurerm_api_management_named_value.kill_switch[each.key].id
+  body = {
+    properties = {
+      value = "retired"
     }
   }
 }

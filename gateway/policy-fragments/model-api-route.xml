@@ -40,8 +40,16 @@
     </when>
   </choose>
 
-  <!-- Model kill switch: anything other than "active" blocks the model for every project (fails closed). -->
+  <!-- Model kill switch: anything other than "active" blocks the model for every project (fails closed).
+       "retired" is set from Git by the model platform deployment when a model's lifecycle is retired: 410, for good. -->
   <choose>
+    <when condition="@(string.Equals(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;model-status&quot;, &quot;&quot;), &quot;retired&quot;, StringComparison.OrdinalIgnoreCase))">
+      <return-response>
+        <set-status code="410" reason="Gone" />
+        <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+        <set-body>@("{\"error\":{\"code\":\"MODEL_RETIRED\",\"message\":\"Model " + context.Variables.GetValueOrDefault&lt;string&gt;("model", "") + " is retired. Its replacement is in the model catalog and in your project's retirement notice.\"}}")</set-body>
+      </return-response>
+    </when>
     <when condition="@(!string.Equals(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;model-status&quot;, &quot;&quot;), &quot;active&quot;, StringComparison.OrdinalIgnoreCase))">
       <return-response>
         <set-status code="503" reason="Service Unavailable" />

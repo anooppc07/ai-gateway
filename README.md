@@ -160,7 +160,7 @@ token that can read team membership.
 ## Lifecycle state and decision records
 
 **Lifecycle state.** Each model's `governance.yaml` holds `lifecycle.state`: `onboarded` → `evaluated` → `validated`
-→ `retired`. A new model starts as `onboarded`. The state changes only by a merged, reviewed pull request; a pipeline
+→ `retiring` → `retired`. A new model starts as `onboarded`. The state changes only by a merged, reviewed pull request; a pipeline
 can propose the next state, with its evidence, but never sets it. Terraform copies the state into the registry entry
 (`model-meta-<model>`, field `lifecycle`), so APIM shows it. Terraform is the only writer of the registry; nobody
 edits it in the portal. Suspension at runtime is the kill switch, not a lifecycle state.
@@ -213,6 +213,25 @@ A new model is validated against the model it would replace before any project i
 **Cognitive Services OpenAI User** on the account, so its evaluations can call the deployments (the pipeline identity
 can't assign roles). The principal ID is the stack's output `eval_projects`. Repository variable `EVAL_JUDGE_MODEL`
 (default `gpt-5.1`) names the judge, unless the pack sets `judge_model`.
+
+## Model retirement
+
+A model is retired in two reviewed steps, and only with an approved alternative.
+
+1. **Notice**: Actions → `model-retirement` → action `notice`, with the model, date (in the future), replacement and
+   reason. It opens a pull request that sets `lifecycle.state: retiring` and `lifecycle.retirement: {date,
+   replacement, reason, requested_by}`. Refused, by the workflow and by Terraform, unless the replacement is
+   `validated`, `replaces` this model, and its platform evaluation ran against the version of this model deployed now
+   (`lifecycle.evaluation.baseline_version`). The description lists the projects that use the model (their
+   allocations at the gateway). Model risk approves it; the person who asked can't. After the merge the registry shows
+   `retiring`; each project repository tells its projects, with the replacement, and proposes adopting it.
+2. **Retire on the date**: daily (or action `due`), each retiring model whose date has come gets a pull request that
+   sets `retired`, listing the projects that still use it. On merge the gateway answers calls to it with **410 Gone**
+   (`MODEL_RETIRED`) for every project; Terraform holds its kill switch at `retired`, so an apply keeps it that way and
+   only a pull request un-retires it. Project onboarding refuses a retired model.
+
+To retire earlier or later, change `retirement.date` in a reviewed pull request. Removing the deployment is a later,
+separate pull request (removing the model folder; its record says `removed`).
 
 ## Two repositories
 
