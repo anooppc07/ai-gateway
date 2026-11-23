@@ -1,0 +1,11 @@
+# Governance record of gpt-5.4-nano, from intake request #22. Owned by model risk (CODEOWNERS): changed
+# only by a reviewed pull request. The requester can't approve it (check separation-of-duties).
+tier: 3
+tier_record: AICOE-2026-052
+aiia: AIIA-0201
+affects_people: false
+sponsor: Retail banking
+intake_issue: 22
+requested_by: anooppc07
+lifecycle:
+  state: onboarded
