@@ -350,6 +350,9 @@ def propose(path, record_file, blob):
         "state": "validated",
         "replaces": pack["baseline"],
         "evaluation": {"verdict": "pass", "pack": f"{pack['path']} v{pack['pack_version']}",
+                       # the baseline's version evaluated against: a retirement notice for the baseline needs it to
+                       # match the version deployed then
+                       "baseline_version": str(model_yaml(pack["baseline"])["model"]["version"]),
                        "dataset_sha": pack["dataset_sha"], "queries": rec["queries"], "judge": pack["judge"],
                        "run": rec.get("run"), "record": blob, "at": rec["at"]},
     }

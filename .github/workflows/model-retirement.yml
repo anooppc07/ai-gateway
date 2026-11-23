@@ -1,0 +1,125 @@
+# Model retirement (scripts/retirement.py), each step a pull request that model risk approves (CODEOWNERS of
+# governance.yaml):
+#
+#   notice   by hand (Actions > model-retirement): model, date, replacement, reason. Sets lifecycle retiring. Refused
+#            unless the replacement is validated, replaces the model, and was evaluated against its current version.
+#            The person who starts it is the commit's author: separation-of-duties won't count their approval.
+#            After the merge each project repository reads the registry and tells its projects (model-adoption).
+#   due      daily (or by hand, action due): for each retiring model whose date has come, a pull request that sets it retired, listing the
+#            projects that still use it. Merging blocks the model at the gateway (410) for every project.
+#
+# Nothing changes in Azure here: the pull requests deploy through model-platform-deployment like any change. A pull
+# request opened by the workflow token starts no workflows, so this one starts ci and a plan on its branch.
+name: model-retirement
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "notice: give a model a retirement date; due: propose retiring the models whose date has come"
+        type: choice
+        options: [notice, due]
+        default: notice
+      model:
+        description: "notice: model to retire (a validated model in use)"
+        required: false
+      date:
+        description: "notice: retirement date, YYYY-MM-DD (in the future)"
+        required: false
+      replacement:
+        description: "notice: a model validated as this model's replacement"
+        required: false
+      reason:
+        description: "notice: reason (shown to the projects)"
+        required: false
+  schedule:
+    - cron: "41 2 * * *"   # daily: retirements whose date has come
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  actions: write   # start ci and the plan on the pull request's branch
+
+concurrency:
+  group: model-retirement
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash   # -eo pipefail
+
+jobs:
+  notice:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'notice'
+    runs-on: ubuntu-latest
+    environment: model-dev   # Azure sign-in: reads which projects use the model
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APIM_SUBSCRIPTION_ID: ${{ vars.APIM_SUBSCRIPTION_ID }}
+      APIM_RESOURCE_GROUP: ${{ vars.APIM_RESOURCE_GROUP }}
+      APIM_NAME: ${{ vars.APIM_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Retirement notice (pull request)
+        env:
+          MODEL: ${{ inputs.model }}
+          DATE: ${{ inputs.date }}
+          REPLACEMENT: ${{ inputs.replacement }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          for v in MODEL DATE REPLACEMENT REASON; do [ -n "${!v}" ] || { echo "::error::$v is required for a notice"; exit 1; }; done
+          python scripts/retirement.py notice "$MODEL" "$DATE" "$REPLACEMENT" "$REASON" pr.md
+          branch="retire-notice/$MODEL-${{ github.run_id }}"
+          git config user.name "model-retirement"; git config user.email "model-retirement@users.noreply.github.com"
+          git checkout -q -b "$branch"
+          git add gateway/foundry-accounts
+          # The person who asked for the notice is the author: their own approval doesn't count.
+          git commit -q --author "${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>" \
+            -m "Retirement notice: $MODEL on $DATE, replaced by $REPLACEMENT" -m "$REASON"
+          git push -q -u origin "$branch"
+          url=$(gh pr create --base main --head "$branch" --title "Retirement notice: $MODEL retires on $DATE (replacement $REPLACEMENT)" --body-file pr.md)
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run model-platform-deployment.yml --ref "$branch" -f plan_only=true
+          echo "Retirement notice: $url" >> "$GITHUB_STEP_SUMMARY"
+
+  due:
+    if: github.event_name == 'schedule' || inputs.action == 'due'
+    runs-on: ubuntu-latest
+    environment: model-dev
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APIM_SUBSCRIPTION_ID: ${{ vars.APIM_SUBSCRIPTION_ID }}
+      APIM_RESOURCE_GROUP: ${{ vars.APIM_RESOURCE_GROUP }}
+      APIM_NAME: ${{ vars.APIM_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Propose retiring each model whose date has come
+        run: |
+          git config user.name "model-retirement"; git config user.email "model-retirement@users.noreply.github.com"
+          for model in $(python scripts/retirement.py due); do
+            branch="retire/$model"
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+              echo "$model: the retirement pull request exists"; continue
+            fi
+            git checkout -q -B "$branch" origin/main
+            python scripts/retirement.py retire "$model" pr.md
+            git add gateway/foundry-accounts
+            git commit -q -m "Retire $model (its retirement date has come)"
+            git push -q -u origin "$branch"
+            url=$(gh pr create --base main --head "$branch" --title "Retire $model: retirement date reached" --body-file pr.md)
+            gh workflow run ci.yml --ref "$branch"
+            gh workflow run model-platform-deployment.yml --ref "$branch" -f plan_only=true
+            echo "- $model: $url" >> "$GITHUB_STEP_SUMMARY"
+            git checkout -q main
+          done
