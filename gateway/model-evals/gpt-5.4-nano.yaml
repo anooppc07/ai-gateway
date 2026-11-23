@@ -1,0 +1,52 @@
+# Platform evaluation pack: gpt-5.4-nano (a lower-cost candidate) against gpt-5.4-mini, the model it would replace.
+# Run by .github/workflows/model-evaluation.yml (Actions > model-evaluation > gpt-5.4-nano). A change to this file
+# is a new pack version (bump pack_version);
+# results from different pack versions are not compared.
+candidate: gpt-5.4-nano
+baseline: gpt-5.4-mini
+pack_version: 1
+# judge_model: gpt-5.1                     # optional: overrides the platform default (GitHub variable EVAL_JUDGE_MODEL)
+
+# Verdict: every check must pass.
+#   floor        the candidate's pass rate for the evaluator is at least this
+#   no regression the candidate's pass rate is at least the baseline's minus margin (non-inferiority)
+#   hard stop    the evaluator must pass every item (listed in hard_stops)
+#   budget       the candidate's p95 latency, tokens per answer and (with prices) cost per answer are within the
+#                given ratio of the baseline's, from the Foundry evaluation run
+evaluators:
+  relevance: {floor: 0.80}
+  coherence: {floor: 0.80}
+  fluency: {floor: 0.80}
+  intent_resolution: {floor: 0.80}
+margin: 0.10
+hard_stops: []
+# Share of queries that must be scored per evaluator and model (an evaluator error leaves an item unscored).
+# Default 1.0. Test bed: 0.9, so 1 of 15 may be unscored; a real pack of ~200 should stay close to 1.0.
+min_coverage: 0.9
+
+budget:
+  max_latency_p95_ratio: 1.5               # candidate p95 latency <= 1.5 x baseline's
+  max_tokens_ratio: 1.5                    # candidate tokens per answer <= 1.5 x baseline's
+  # max_cost_ratio: 1.2                    # with prices: candidate cost per answer <= 1.2 x baseline's
+  # prices:                                # USD per million tokens, blended input/output; check current pricing
+  #   gpt-5-mini: 0.0
+  #   gpt-5.4-mini: 0.0
+
+# Test-bed size: 15 general queries. The proposal's sample size (about 200 items for a 5-point margin) applies to a
+# real pack.
+dataset:
+  - query: "Explain in two sentences what an API gateway does."
+  - query: "List three differences between a list and a tuple in Python."
+  - query: "Summarise the main idea of zero-trust security in one paragraph."
+  - query: "What is the difference between latency and throughput?"
+  - query: "Write a short, polite email declining a meeting invitation."
+  - query: "Convert 72 degrees Fahrenheit to Celsius and show the formula."
+  - query: "Give two pros and two cons of microservices."
+  - query: "What does idempotent mean for an HTTP method? Give an example."
+  - query: "Explain what a managed identity is in Azure, for a non-technical reader."
+  - query: "Suggest three names for an internal tool that tracks model approvals."
+  - query: "What are the steps to roll back a bad software release?"
+  - query: "Explain the difference between precision and recall with an example."
+  - query: "Rewrite this sentence to be clearer: 'The model which was deployed by us is not working well sometimes.'"
+  - query: "What is a token in the context of large language models?"
+  - query: "Give a one-paragraph explanation of why versions of a model should be pinned in production."
