@@ -1,7 +1,7 @@
 # Model platform deployment stack: models in gateway/foundry-accounts/<account>/models/<model>/ are deployed in their
 # hosting Foundry account and registered on the AI gateway (APIM). Own state file (key set by the
 # model-platform-deployment, ai-gateway-models-<environment>.tfstate); the APIM instance and the Foundry
-# accounts are only read, never changed.
+# accounts are only read, never changed (except the platform evaluation project created in each of them).
 terraform {
   required_version = ">= 1.9"
 
@@ -9,6 +9,10 @@ terraform {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = ">= 4.2, < 5.0"
+    }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.4"
     }
   }
 
@@ -19,4 +23,8 @@ provider "azurerm" {
   features {}
   storage_use_azuread = true
   subscription_id     = local.env.gateway.subscription_id
+}
+
+provider "azapi" {
+  subscription_id = local.env.gateway.subscription_id
 }

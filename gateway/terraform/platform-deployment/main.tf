@@ -172,3 +172,28 @@ resource "azurerm_api_management_product_group" "guests" {
   api_management_name = data.azurerm_api_management.this.name
   resource_group_name = data.azurerm_api_management.this.resource_group_name
 }
+
+# Platform evaluation project, one per hosting account: the platform team's own Foundry project, where the
+# model-evaluation workflow evaluates a candidate model against the model it would replace. It sits in the account
+# that hosts the models, so it reaches every deployment there directly (no connection, no project, nothing per
+# model). Use cases never call it. Its managed identity needs Cognitive Services OpenAI User on the account, granted
+# once (README, Platform evaluation).
+resource "azapi_resource" "eval_project" {
+  for_each = local.accounts
+
+  type      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
+  name      = "platform-eval"
+  parent_id = data.azurerm_cognitive_account.hosting[each.key].id
+  location  = data.azurerm_cognitive_account.hosting[each.key].location
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  body = {
+    properties = {
+      displayName = "Platform model evaluation"
+      description = "AI platform team: candidate models against the models they would replace. Not for use cases."
+    }
+  }
+}

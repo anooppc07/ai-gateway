@@ -1,10 +1,10 @@
 # Platform model evaluation (Phase 1 step 3, test bed G4): a candidate model against the model it would replace, then
 # the pull request in which model risk validates it. Run by hand by the platform team (Actions > model-evaluation).
 #
-#   evaluate     scripts/model_eval.py run: in the platform evaluation Foundry project (variables EVAL_PROJECT_ENDPOINT,
-#                EVAL_CONNECTION of environment model-dev), the model itself as the target, through the gateway; the
-#                pack in gateway/model-evals/<candidate>.yaml; verdict = coverage, floors, hard stops, no regression,
-#                budget
+#   evaluate     scripts/model_eval.py run: in the platform evaluation Foundry project platform-eval of the hosting
+#                account (created by the platform stack, independent of any use-case project), each model's deployment
+#                as the target; the pack in gateway/model-evals/<candidate>.yaml; verdict = coverage, floors, hard
+#                stops, no regression, budget
 #   record       the evaluation record (pass or fail) goes to the immutable records store as evidence:
 #                <env>/evaluations/<model>/<time>-run<id>.json
 #   propose      on a pass only: a pull request that sets the candidate's governance.yaml lifecycle to validated, with
@@ -43,8 +43,7 @@ jobs:
     environment: model-dev
     env:
       PACK: gateway/model-evals/${{ inputs.candidate }}.yaml
-      EVAL_PROJECT_ENDPOINT: ${{ vars.EVAL_PROJECT_ENDPOINT }}
-      EVAL_CONNECTION: ${{ vars.EVAL_CONNECTION }}
+      EVAL_PROJECT_ENDPOINT: ${{ vars.EVAL_PROJECT_ENDPOINT }}   # optional override; default the hosting account's platform-eval
       EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL || 'gpt-5.1' }}
       RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
       RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}
