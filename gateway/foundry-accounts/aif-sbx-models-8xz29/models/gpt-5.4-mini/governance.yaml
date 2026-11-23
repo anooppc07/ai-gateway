@@ -9,7 +9,7 @@ intake_issue: null
 lifecycle:
   state: retiring
   retirement:
-    date: '2027-01-23'
+    date: '2026-11-23'   # brought forward from 2027-01-23 (test bed: accelerated retirement; no project uses it)
     replacement: gpt-5.4-nano
     reason: Retiring
     requested_by: anooppc07
