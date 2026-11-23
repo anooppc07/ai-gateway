@@ -11,6 +11,7 @@ on:
     inputs:
       environment: {type: string, required: true}
       plan_only: {type: boolean, default: false}
+      records_since: {type: string, default: ""}   # records for the changes since this commit (else since the push's previous commit)
 
 permissions:
   id-token: write
@@ -88,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ENVIRONMENT: ${{ inputs.environment }}
-          BEFORE_SHA: ${{ github.event.before }}
+          BEFORE_SHA: ${{ inputs.records_since || github.event.before }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RECORDS_STORAGE_ACCOUNT: ${{ vars.RECORDS_STORAGE_ACCOUNT }}
           RECORDS_CONTAINER: ${{ vars.RECORDS_CONTAINER }}

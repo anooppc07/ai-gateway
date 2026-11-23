@@ -24,6 +24,9 @@ on:
         description: "Plan in dev only, change nothing (model-intake uses it for the pull request it opens)"
         type: boolean
         default: false
+      records_since:
+        description: "Decision records for the changes since this commit (when a run applied a change but didn't record it)"
+        required: false
 
 permissions:
   id-token: write
@@ -63,6 +66,7 @@ jobs:
     with:
       environment: dev
       plan_only: ${{ github.event_name == 'pull_request' || inputs.plan_only == true }}
+      records_since: ${{ inputs.records_since || '' }}
 
   # uat: release tags only, after dev succeeded; approval on model-uat.
   uat:

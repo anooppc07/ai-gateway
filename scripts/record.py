@@ -94,10 +94,17 @@ def build(out_dir):
     env, repo, sha = os.environ["ENVIRONMENT"], os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
     before = os.environ.get("BEFORE_SHA", "")
     now = datetime.datetime.now(datetime.timezone.utc)
-    pr = pull_request(repo, sha)
     os.makedirs(out_dir, exist_ok=True)
     names = []
+    prs = {}
     for folder in model_folders(before, sha):
+        # The pull request that changed this model: the last commit in the range that touched its folder (a run that
+        # records earlier changes, records_since, mustn't credit its own pull request).
+        last = sh("git", "log", "-1", "--format=%H", f"{before}..{sha}", "--", folder).strip() if before and set(before) != {"0"} else ""
+        key = last or sha
+        if key not in prs:
+            prs[key] = pull_request(repo, key)
+        pr = prs[key]
         name = folder.split("/")[-1]
         model, gov = load(f"{folder}/model.yaml"), load(f"{folder}/governance.yaml")
         old_gov = old_value(before, f"{folder}/governance.yaml")
