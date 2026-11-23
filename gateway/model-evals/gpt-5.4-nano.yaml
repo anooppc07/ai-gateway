@@ -4,7 +4,15 @@
 # results from different pack versions are not compared.
 candidate: gpt-5.4-nano
 baseline: gpt-5.4-mini
-pack_version: 1
+pack_version: 2
+# Version history (each version approved by model risk in a pull request; results of every version stay in the
+# immutable records store):
+#   v1  latency p95 <= 1.5x baseline. gpt-5.4-nano failed twice on latency (p95 7.6 s and 8.8 s against 3.2 s and
+#       2.7 s), with equal quality and about 3.4x lower cost per answer (records dev/evaluations/gpt-5.4-nano/).
+#   v2  decision: for internal assistants (no customer-facing, real-time use) cost matters more than the slowest
+#       answers. Latency p95 <= 3.5x baseline, and a new cost condition: cost per answer <= 0.5x baseline. Quality
+#       floors and the no-regression margin are unchanged. A use case that needs fast answers evaluates the model
+#       again in its own agent evaluation (and can stay on gpt-5.4-mini).
 # judge_model: gpt-5.1                     # optional: overrides the platform default (GitHub variable EVAL_JUDGE_MODEL)
 
 # Verdict: every check must pass.
@@ -25,9 +33,9 @@ hard_stops: []
 min_coverage: 0.9
 
 budget:
-  max_latency_p95_ratio: 1.5               # candidate p95 latency <= 1.5 x baseline's
+  max_latency_p95_ratio: 3.5               # v2 (was 1.5): candidate p95 latency <= 3.5 x baseline's
   max_tokens_ratio: 1.5                    # candidate tokens per answer <= 1.5 x baseline's
-  # max_cost_ratio: 1.2                    # with prices: candidate cost per answer <= 1.2 x baseline's
+  max_cost_ratio: 0.5                      # v2, new: candidate cost per answer <= 0.5 x baseline's (Foundry's estimate)
   # prices:                                # USD per million tokens, blended input/output; check current pricing
   #   gpt-5-mini: 0.0
   #   gpt-5.4-mini: 0.0

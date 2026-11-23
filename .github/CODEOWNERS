@@ -15,3 +15,6 @@
 
 # Model risk: tier, AICOE tier record, AIIA, people impact, sponsor, intake request.
 /gateway/foundry-accounts/*/models/*/governance.yaml    @dreadnaught07
+
+# Model risk: the evaluation criteria (packs). Changing a floor, margin or budget is a decision they approve.
+/gateway/model-evals/                                   @dreadnaught07
