@@ -248,7 +248,9 @@ def run(path, out):
     if len(set(accounts.values())) != 1:
         sys.exit(f"Candidate, baseline and judge must be in one hosting account: {accounts}")
     account = accounts[pack["candidate"]]
-    endpoint = os.environ.get("EVAL_PROJECT_ENDPOINT") or f"https://{account}.services.ai.azure.com/api/projects/platform-eval"
+    # Always the hosting account's own platform evaluation project: no override, so a stale setting can't point the
+    # evaluation at a project that can't see the deployments.
+    endpoint = f"https://{account}.services.ai.azure.com/api/projects/platform-eval"
     print(f"platform evaluation project: {endpoint}")
     oai = AIProjectClient(endpoint=endpoint, credential=AzureCliCredential(process_timeout=60)).get_openai_client()
 
