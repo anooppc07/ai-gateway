@@ -1,0 +1,4 @@
+# Smoke tests run after deployment.
+- input: Reply with the single word OK.
+  must_contain_any:
+  - OK
