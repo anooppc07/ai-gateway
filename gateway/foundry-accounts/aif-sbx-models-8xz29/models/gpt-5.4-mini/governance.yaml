@@ -7,4 +7,9 @@ affects_people: false
 sponsor: ai-platform-team
 intake_issue: null
 lifecycle:
-  state: validated          # evaluated and approved before decision records existed (test bed)
+  state: retiring
+  retirement:
+    date: '2027-01-23'
+    replacement: gpt-5.4-nano
+    reason: Retiring
+    requested_by: anooppc07
