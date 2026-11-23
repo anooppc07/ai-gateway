@@ -1,4 +1,5 @@
-# Model-level evaluation pack (G4): candidate against the serving baseline on the same queries and judge.
+# Platform evaluation pack: gpt-5.4-mini against gpt-5-mini (kept as the record of that evaluation; gpt-5.4-mini is
+# validated, so it isn't evaluated again).
 # Run by .github/workflows/model-evaluation.yml. A change to this file is a new pack version (bump pack_version);
 # results from different pack versions are not compared.
 candidate: gpt-5.4-mini
